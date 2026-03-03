@@ -13,9 +13,9 @@ A **production-ready payment microservice** built with FastAPI and Stripe, desig
 | **Customer Management** | CRUD synced with Stripe Customer objects |
 | **PDF Receipts** | Auto-generated professional PDF receipts |
 | **Webhook Handling** | Stripe webhook receiver with signature verification |
+| **Multi-Tenant API Keys** | Database-backed API key management with SHA-256 hashing |
 | **Idempotency** | `Idempotency-Key` header prevents duplicate operations |
-| **Rate Limiting** | Redis-backed sliding window rate limiter per API key |
-| **API Key Auth** | `X-API-Key` header for service-to-service authentication |
+| **Rate Limiting** | Redis-backed sliding window rate limiter, per-key configurable |
 | **OpenAPI Docs** | Interactive Swagger UI at `/docs` and ReDoc at `/redoc` |
 | **Health Probes** | `/health` and `/ready` endpoints for orchestrators |
 | **Correlation IDs** | `X-Correlation-ID` header on every request/response |
@@ -38,21 +38,23 @@ A **production-ready payment microservice** built with FastAPI and Stripe, desig
 │  │ • CORS    │  │ • Rate   │  │ • /refunds       │  │
 │  │ • Errors  │  │   Limit  │  │ • /customers     │  │
 │  │ • Logging │  │ • Corr ID│  │ • /webhooks      │  │
+│  │           │  │          │  │ • /admin/api-keys │  │
 │  └──────────┘  └──────────┘  └────────┬─────────┘  │
 │                                        │            │
 │  ┌─────────────────────────────────────▼─────────┐  │
 │  │              Service Layer                     │  │
 │  │  • PaymentService    • RefundService           │  │
 │  │  • CustomerService   • ReceiptService          │  │
-│  │  • StripeService (SDK wrapper)                 │  │
+│  │  • StripeService     • ApiKeyService           │  │
 │  └──────────┬──────────────────┬─────────────────┘  │
 │             │                  │                     │
 │  ┌──────────▼──────┐  ┌───────▼──────────┐          │
 │  │  PostgreSQL     │  │  Redis           │          │
 │  │  • Payments     │  │  • Idempotency   │          │
 │  │  • Refunds      │  │  • Rate limits   │          │
-│  │  • Customers    │  │                  │          │
+│  │  • Customers    │  │  • API key cache │          │
 │  │  • Receipts     │  │                  │          │
+│  │  • API Keys     │  │                  │          │
 │  └─────────────────┘  └──────────────────┘          │
 │             │                                        │
 │  ┌──────────▼──────────────────────────────────────┐ │
@@ -79,6 +81,10 @@ cd Payment_service
 # Create environment file from template
 cp .env.example .env
 ```
+
+Edit `.env` and set:
+- `ADMIN_API_KEY` — a strong secret for the admin bootstrap key
+- `STRIPE_SECRET_KEY` — your Stripe test key (`sk_test_...`)
 
 ### 2. Set up Stripe
 
@@ -109,7 +115,19 @@ curl http://localhost:8000/health
 curl http://localhost:8000/ready
 ```
 
-### 4. Explore the API
+### 4. Create your first tenant API key
+
+```bash
+# Use your admin key to create a tenant key
+curl -X POST http://localhost:8000/api/v1/admin/api-keys \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-admin-api-key-here" \
+  -d '{"client_name": "My Ticket Service"}'
+```
+
+The response includes a `raw_key` field (e.g., `ps_live_a1b2c3d4...`). **Save it — it's shown only once.**
+
+### 5. Explore the API
 
 Open your browser:
 - **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -118,9 +136,54 @@ Open your browser:
 
 ---
 
+## 🔑 API Key Management
+
+The service uses a **two-tier authentication system**:
+
+### Admin Key (bootstrap)
+
+Set via `ADMIN_API_KEY` in `.env`. This key can:
+- Create, list, update, and revoke tenant API keys (`/api/v1/admin/api-keys`)
+- Access all payment/refund/customer endpoints
+
+### Tenant Keys (per-client)
+
+Created via the admin endpoints. Each key:
+- Is a random 56-character token prefixed with `ps_live_`
+- Is **hashed (SHA-256)** before storage — the raw key is only shown once at creation time
+- Can have **custom rate limits** (overrides global defaults)
+- Can have **scopes** to limit access (e.g., `payments:read` only)
+- Can have an **expiration date**
+- Can be **revoked** at any time
+- Has **usage tracking** (`last_used_at`)
+- Is **cached in Redis** for fast validation (5-minute TTL)
+
+### Workflow
+
+```
+1. Deploy service, set ADMIN_API_KEY in .env
+2. Use admin key to create tenant keys for each consuming service
+3. Share tenant keys with consuming services
+4. Consuming services use their key in X-API-Key header
+5. Admin can monitor, update, or revoke keys at any time
+```
+
+### Admin API Key Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/admin/api-keys` | Create a new API key |
+| `GET` | `/api/v1/admin/api-keys` | List all API keys |
+| `GET` | `/api/v1/admin/api-keys/{id}` | Get key details |
+| `PUT` | `/api/v1/admin/api-keys/{id}` | Update key settings |
+| `DELETE` | `/api/v1/admin/api-keys/{id}` | Revoke a key |
+
+---
+
 ## 📡 API Reference
 
 All endpoints (except health and webhooks) require the `X-API-Key` header.
+Use the **admin key** for `/api/v1/admin/*` endpoints. Use **tenant keys** for everything else.
 
 ### Payments
 
@@ -168,12 +231,29 @@ All endpoints (except health and webhooks) require the `X-API-Key` header.
 
 ## 🧪 Usage Examples
 
+### Create a tenant API key (admin)
+
+```bash
+curl -X POST http://localhost:8000/api/v1/admin/api-keys \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $ADMIN_API_KEY" \
+  -d '{
+    "client_name": "Ticket Service",
+    "description": "API key for event ticketing platform",
+    "scopes": ["payments:read", "payments:write", "customers:read"],
+    "rate_limit_requests": 200,
+    "rate_limit_window_seconds": 60
+  }'
+# Response: { ..., "raw_key": "ps_live_abc123...", ... }
+# ⚠️  Save the raw_key — it's only shown once!
+```
+
 ### Create a customer
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/customers \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: your-secret-api-key-here" \
+  -H "X-API-Key: ps_live_<your_tenant_key>" \
   -d '{
     "email": "john@example.com",
     "name": "John Doe",
@@ -184,10 +264,9 @@ curl -X POST http://localhost:8000/api/v1/customers \
 ### Create a payment
 
 ```bash
-# Using Stripe test card token
 curl -X POST http://localhost:8000/api/v1/payments \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: your-secret-api-key-here" \
+  -H "X-API-Key: ps_live_<your_tenant_key>" \
   -H "Idempotency-Key: unique-key-123" \
   -d '{
     "amount": 5000,
@@ -205,29 +284,14 @@ curl -X POST http://localhost:8000/api/v1/payments \
 
 ```bash
 curl "http://localhost:8000/api/v1/payments?status=succeeded&limit=10" \
-  -H "X-API-Key: your-secret-api-key-here"
+  -H "X-API-Key: ps_live_<your_tenant_key>"
 ```
 
-### Create a refund
+### Revoke an API key (admin)
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/refunds \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-secret-api-key-here" \
-  -d '{
-    "payment_id": "<PAYMENT_UUID>",
-    "amount": 2500,
-    "reason": "requested_by_customer",
-    "description": "Customer requested partial refund"
-  }'
-```
-
-### Download receipt
-
-```bash
-curl -o receipt.pdf \
-  "http://localhost:8000/api/v1/payments/<PAYMENT_UUID>/receipt" \
-  -H "X-API-Key: your-secret-api-key-here"
+curl -X DELETE http://localhost:8000/api/v1/admin/api-keys/<KEY_UUID> \
+  -H "X-API-Key: $ADMIN_API_KEY"
 ```
 
 ---
@@ -257,13 +321,13 @@ See the [Stripe Testing docs](https://docs.stripe.com/testing) for more test car
 | `APP_VERSION` | 1.0.0 | Application version |
 | `DEBUG` | false | Enable debug mode |
 | `ENVIRONMENT` | production | Environment name |
-| `API_KEY` | — | **Required.** API key for authentication |
+| `ADMIN_API_KEY` | — | **Required.** Admin bootstrap key for managing tenant API keys |
 | `DATABASE_URL` | — | PostgreSQL connection URL |
 | `REDIS_URL` | — | Redis connection URL |
 | `STRIPE_SECRET_KEY` | — | **Required.** Stripe secret key (`sk_test_...`) |
 | `STRIPE_WEBHOOK_SECRET` | — | Stripe webhook signing secret |
-| `RATE_LIMIT_REQUESTS` | 100 | Max requests per window |
-| `RATE_LIMIT_WINDOW_SECONDS` | 60 | Rate limit window in seconds |
+| `RATE_LIMIT_REQUESTS` | 100 | Default max requests per window (overridable per key) |
+| `RATE_LIMIT_WINDOW_SECONDS` | 60 | Default rate limit window in seconds |
 | `LOG_LEVEL` | INFO | Logging level |
 
 ---
@@ -278,6 +342,7 @@ The service uses **PostgreSQL** with **SQLAlchemy** (async) and **Alembic** for 
 - **payments** — Payment records with full lifecycle tracking
 - **refunds** — Refund records linked to payments
 - **receipts** — Generated PDF receipts stored as binary
+- **api_keys** — Hashed API keys with scopes, rate limits, and expiration
 
 ### Running migrations
 
@@ -348,7 +413,8 @@ Payment_service/
 ├── alembic/                    # Database migrations
 │   ├── env.py
 │   └── versions/
-│       └── 001_initial.py
+│       ├── 001_initial.py
+│       └── 002_api_keys.py
 ├── app/
 │   ├── main.py                 # FastAPI app factory
 │   ├── config.py               # Pydantic settings
@@ -357,12 +423,14 @@ Payment_service/
 │   │   ├── payment.py
 │   │   ├── refund.py
 │   │   ├── customer.py
-│   │   └── receipt.py
+│   │   ├── receipt.py
+│   │   └── api_key.py
 │   ├── schemas/                # Pydantic request/response schemas
 │   │   ├── payment.py
 │   │   ├── refund.py
 │   │   ├── customer.py
 │   │   ├── receipt.py
+│   │   ├── api_key.py
 │   │   └── common.py
 │   ├── api/v1/                 # API endpoints
 │   │   ├── router.py
@@ -370,13 +438,15 @@ Payment_service/
 │   │   ├── refunds.py
 │   │   ├── customers.py
 │   │   ├── webhooks.py
+│   │   ├── api_keys.py
 │   │   └── health.py
 │   ├── services/               # Business logic
 │   │   ├── stripe_service.py
 │   │   ├── payment_service.py
 │   │   ├── refund_service.py
 │   │   ├── customer_service.py
-│   │   └── receipt_service.py
+│   │   ├── receipt_service.py
+│   │   └── api_key_service.py
 │   ├── middleware/             # Cross-cutting concerns
 │   │   ├── idempotency.py
 │   │   └── rate_limiter.py
@@ -388,7 +458,8 @@ Payment_service/
     ├── test_payments.py
     ├── test_refunds.py
     ├── test_customers.py
-    └── test_webhooks.py
+    ├── test_webhooks.py
+    └── test_api_keys.py
 ```
 
 ---
@@ -399,11 +470,13 @@ Payment_service/
 
 This service is designed to be called by other services in your platform:
 
-1. **Set an API key** in `.env` and share it with consuming services
-2. **Create customers** when users register on your platform
-3. **Create payments** when processing orders/tickets
-4. **Handle webhooks** for async payment status updates
-5. **Generate receipts** after successful payments
+1. **Set `ADMIN_API_KEY`** in `.env` when deploying
+2. **Create a tenant API key** for each consuming service via `POST /api/v1/admin/api-keys`
+3. **Share the tenant key** with the consuming service (shown only once at creation)
+4. **Create customers** when users register on your platform
+5. **Create payments** when processing orders/tickets
+6. **Handle webhooks** for async payment status updates
+7. **Generate receipts** after successful payments
 
 ### Example: Event Ticketing Integration
 
@@ -418,11 +491,12 @@ This service is designed to be called by other services in your platform:
                                               └──────────────┘
 ```
 
-1. Frontend creates an order via Ticket Service
-2. Ticket Service calls Payment Service `POST /api/v1/payments`
-3. Payment Service processes via Stripe and returns result
-4. Ticket Service confirms the ticket reservation
-5. Stripe sends webhook → Payment Service updates status
+1. Admin creates a tenant API key for the Ticket Service
+2. Frontend creates an order via Ticket Service
+3. Ticket Service calls Payment Service `POST /api/v1/payments` using its tenant key
+4. Payment Service processes via Stripe and returns result
+5. Ticket Service confirms the ticket reservation
+6. Stripe sends webhook → Payment Service updates status
 
 ---
 

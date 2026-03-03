@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import (
 
 # Set test environment before importing app modules
 os.environ["ENVIRONMENT"] = "test"
-os.environ["API_KEY"] = "test-api-key"
+os.environ["ADMIN_API_KEY"] = "test-admin-key"
 os.environ["STRIPE_SECRET_KEY"] = "sk_test_fake"
 os.environ["STRIPE_WEBHOOK_SECRET"] = "whsec_fake"
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///test.db"
@@ -37,8 +37,8 @@ def event_loop() -> Generator:
 
 @pytest.fixture
 def api_key_header():
-    """Standard auth header for tests."""
-    return {"X-API-Key": "test-api-key"}
+    """Standard admin auth header for tests."""
+    return {"X-API-Key": "test-admin-key"}
 
 
 @pytest.fixture

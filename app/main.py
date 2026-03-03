@@ -7,14 +7,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.models import APIKey, APIKeyIn, SecuritySchemeType
 from fastapi.responses import JSONResponse
 
 from app.api.v1.health import router as health_router
 from app.api.v1.router import router as v1_router
 from app.config import get_settings
-from app.database import engine, Base
+from app.database import engine, Base, get_db
 from app.middleware.idempotency import idempotency_service
 from app.middleware.rate_limiter import rate_limiter
+from app.services.api_key_service import api_key_service
 from app.utils.exceptions import register_exception_handlers, AuthenticationError, RateLimitError
 from app.utils.logging import setup_logging, generate_correlation_id, correlation_id_ctx
 
@@ -42,6 +44,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down...")
     await idempotency_service.close()
     await rate_limiter.close()
+    await api_key_service.close()
     await engine.dispose()
     logger.info("Shutdown complete")
 
@@ -59,18 +62,22 @@ def create_app() -> FastAPI:
             "refunds, customer management, receipt generation, and webhook handling.\n\n"
             "## Authentication\n"
             "All API endpoints (except health checks and webhooks) require an "
-            "`X-API-Key` header for authentication.\n\n"
+            "`X-API-Key` header for authentication. Click the **Authorize** button "
+            "(🔒) above to enter your API key, and it will be included in all requests.\n\n"
+            "- **Admin key**: Set via `ADMIN_API_KEY` env var — used to manage tenant API keys\n"
+            "- **Tenant keys**: Created via `POST /api/v1/admin/api-keys` — used for payment operations\n\n"
             "## Idempotency\n"
             "POST endpoints support the `Idempotency-Key` header to prevent "
             "duplicate operations.\n\n"
             "## Rate Limiting\n"
-            "API requests are rate-limited per API key. Check the "
-            "`X-RateLimit-*` response headers for current limits."
+            "API requests are rate-limited per API key. Each tenant key can have "
+            "custom rate limits. Check the `X-RateLimit-*` response headers for current limits."
         ),
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
         lifespan=lifespan,
+        swagger_ui_parameters={"persistAuthorization": True},
         openapi_tags=[
             {
                 "name": "Payments",
@@ -93,11 +100,50 @@ def create_app() -> FastAPI:
                 "description": "Receive and process Stripe webhook events.",
             },
             {
+                "name": "API Keys",
+                "description": "Manage tenant API keys (admin only).",
+            },
+            {
                 "name": "Health",
                 "description": "Service health and readiness probes.",
             },
         ],
     )
+
+    # ── OpenAPI Security Scheme ──────────────────────
+    # This makes the 🔒 Authorize button appear in Swagger UI
+    # and adds X-API-Key to all generated curl commands
+    def custom_openapi():
+        if app.openapi_schema:
+            return app.openapi_schema
+        from fastapi.openapi.utils import get_openapi
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+            tags=app.openapi_tags,
+        )
+        # Add API key security scheme
+        schema["components"] = schema.get("components", {})
+        schema["components"]["securitySchemes"] = {
+            "ApiKeyAuth": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-API-Key",
+                "description": (
+                    "Enter your API key. Use the **admin key** (from ADMIN_API_KEY env var) "
+                    "for `/api/v1/admin/*` endpoints, or a **tenant key** (ps_live_...) "
+                    "for payment/refund/customer operations."
+                ),
+            }
+        }
+        # Apply globally to all endpoints
+        schema["security"] = [{"ApiKeyAuth": []}]
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = custom_openapi
 
     # ── CORS ─────────────────────────────────────────
     app.add_middleware(
@@ -128,10 +174,12 @@ def create_app() -> FastAPI:
         skip_paths = ("/health", "/ready", "/docs", "/redoc", "/openapi.json", "/api/v1/webhooks")
         skip_auth = any(path.startswith(p) for p in skip_paths)
 
+        rate_headers = {}
+
         if not skip_auth:
-            # Authentication
-            api_key = request.headers.get("X-API-Key")
-            if not api_key or api_key != settings.api_key:
+            # Extract API key from header
+            raw_key = request.headers.get("X-API-Key")
+            if not raw_key:
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={
@@ -139,14 +187,68 @@ def create_app() -> FastAPI:
                             "type": "authentication_error",
                             "title": "AuthenticationError",
                             "status": 401,
-                            "detail": "Invalid or missing API key",
+                            "detail": "Missing API key. Include an X-API-Key header.",
                             "instance": str(request.url),
                         }
                     },
                 )
 
-            # Rate limiting
-            allowed, rate_headers = await rate_limiter.is_allowed(api_key)
+            # Check if it's the admin key
+            is_admin = (raw_key == settings.admin_api_key)
+
+            # Admin-only endpoints
+            is_admin_endpoint = path.startswith("/api/v1/admin/")
+            if is_admin_endpoint and not is_admin:
+                return JSONResponse(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    content={
+                        "error": {
+                            "type": "authorization_error",
+                            "title": "ForbiddenError",
+                            "status": 403,
+                            "detail": "Admin API key required for this endpoint.",
+                            "instance": str(request.url),
+                        }
+                    },
+                )
+
+            if not is_admin:
+                # Validate tenant key against database
+                from app.database import async_session
+                async with async_session() as db:
+                    api_key_record = await api_key_service.validate_key(db, raw_key)
+                    await db.commit()
+
+                if not api_key_record:
+                    return JSONResponse(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        content={
+                            "error": {
+                                "type": "authentication_error",
+                                "title": "AuthenticationError",
+                                "status": 401,
+                                "detail": "Invalid, revoked, or expired API key.",
+                                "instance": str(request.url),
+                            }
+                        },
+                    )
+
+                # Store the API key record on request.state for downstream use
+                request.state.api_key = api_key_record
+                request.state.client_name = api_key_record.client_name
+
+                # Use per-key rate limits if configured, otherwise global defaults
+                rl_requests = api_key_record.rate_limit_requests or settings.rate_limit_requests
+                rl_window = api_key_record.rate_limit_window_seconds or settings.rate_limit_window_seconds
+            else:
+                # Admin key identified
+                request.state.api_key = None
+                request.state.client_name = "__admin__"
+                rl_requests = settings.rate_limit_requests
+                rl_window = settings.rate_limit_window_seconds
+
+            # Rate limiting (per raw key)
+            allowed, rate_headers = await rate_limiter.is_allowed(raw_key)
             if not allowed:
                 response = JSONResponse(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,

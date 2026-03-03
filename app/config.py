@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     environment: str = Field(default="production")
 
     # ── API Security ─────────────────────────
-    api_key: str = Field(default="change-me-in-production")
+    # Admin key for managing API keys (bootstrap key)
+    admin_api_key: str = Field(default="change-me-in-production")
 
     # ── Database ─────────────────────────────
     database_url: str = Field(
