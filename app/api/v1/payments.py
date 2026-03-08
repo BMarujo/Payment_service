@@ -93,11 +93,14 @@ async def get_payment(
     return await payment_service.get_payment(db=db, payment_id=payment_id)
 
 
-@router.post(
+@router.put(
     "/{payment_id}/confirm",
     response_model=PaymentResponse,
     summary="Confirm a payment",
-    description="Confirm/capture a pending payment intent.",
+    description=(
+        "Confirm/capture a pending payment intent. Updates the existing payment "
+        "status to 'succeeded' (or 'requires_action' if further steps are needed)."
+    ),
 )
 async def confirm_payment(
     payment_id: UUID,
@@ -106,24 +109,28 @@ async def confirm_payment(
     return await payment_service.confirm_payment(db=db, payment_id=payment_id)
 
 
-@router.post(
-    "/{payment_id}/cancel",
+@router.delete(
+    "/{payment_id}",
     response_model=PaymentResponse,
-    summary="Cancel a payment",
-    description="Cancel a pending or processing payment.",
+    summary="Cancel or refund a payment",
+    description=(
+        "Cancel or refund a payment depending on its current status:\n\n"
+        "- **Pending / processing / requires_action** → cancels the payment via Stripe\n"
+        "- **Succeeded** → automatically issues a full refund via Stripe\n\n"
+        "The payment status is updated accordingly (`canceled` or `refunded`)."
+    ),
 )
-async def cancel_payment(
+async def cancel_or_refund_payment(
     payment_id: UUID,
     db: AsyncSession = Depends(get_db),
 ):
-    return await payment_service.cancel_payment(db=db, payment_id=payment_id)
+    return await payment_service.cancel_or_refund_payment(db=db, payment_id=payment_id)
 
 
 @router.get(
     "/{payment_id}/receipt",
     summary="Download payment receipt",
     description="Generate and download a PDF receipt for a succeeded payment.",
-    tags=["Receipts"],
     responses={
         200: {
             "content": {"application/pdf": {}},

@@ -1,0 +1,214 @@
+================================================================================
+  Payment Service — Full API Workflow
+  Run these commands in order to test every endpoint.
+  Replace API_KEY with your tenant key (or admin key for admin endpoints).
+================================================================================
+
+API_KEY="ps_live_af20121084e52d543947ba5fc1a45d59047e0695f0f1abdf"
+ADMIN_KEY="your-admin-api-key-here"
+BASE="http://localhost:8000"
+
+================================================================================
+  1. HEALTH CHECKS (no auth required)
+================================================================================
+
+# 1.1 Liveness probe
+curl -s "$BASE/health" | python3 -m json.tool
+
+# 1.2 Readiness probe (checks DB + Redis)
+curl -s "$BASE/ready" | python3 -m json.tool
+
+
+================================================================================
+  2. API KEY MANAGEMENT (admin key required)
+================================================================================
+
+# 2.1 Create a tenant API key
+curl -s -X POST "$BASE/api/v1/admin/api-keys" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $ADMIN_KEY" \
+  -d '{
+    "client_name": "My Ticket Service",
+    "description": "Key for event ticketing platform"
+  }' | python3 -m json.tool
+
+# 2.2 List all API keys
+curl -s "$BASE/api/v1/admin/api-keys" \
+  -H "X-API-Key: $ADMIN_KEY" | python3 -m json.tool
+
+# 2.3 Get a specific API key (replace KEY_ID)
+curl -s "$BASE/api/v1/admin/api-keys/KEY_ID" \
+  -H "X-API-Key: $ADMIN_KEY" | python3 -m json.tool
+
+# 2.4 Update an API key (replace KEY_ID)
+curl -s -X PUT "$BASE/api/v1/admin/api-keys/KEY_ID" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $ADMIN_KEY" \
+  -d '{
+    "description": "Updated description",
+    "rate_limit_requests": 200
+  }' | python3 -m json.tool
+
+# 2.5 Revoke an API key (replace KEY_ID)
+curl -s -X DELETE "$BASE/api/v1/admin/api-keys/KEY_ID" \
+  -H "X-API-Key: $ADMIN_KEY" | python3 -m json.tool
+
+
+================================================================================
+  3. CUSTOMERS
+================================================================================
+
+# 3.1 Create a customer
+curl -s -X POST "$BASE/api/v1/customers" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -d '{
+    "email": "alice@example.com",
+    "name": "Alice Smith",
+    "phone": "+1987654321",
+    "metadata": {"plan": "premium"}
+  }' | python3 -m json.tool
+
+# 3.2 List customers
+curl -s "$BASE/api/v1/customers?limit=10&offset=0" \
+  -H "X-API-Key: $API_KEY" | python3 -m json.tool
+
+# 3.3 Get a specific customer (replace CUSTOMER_ID)
+curl -s "$BASE/api/v1/customers/CUSTOMER_ID" \
+  -H "X-API-Key: $API_KEY" | python3 -m json.tool
+
+# 3.4 Update a customer (replace CUSTOMER_ID)
+curl -s -X PUT "$BASE/api/v1/customers/CUSTOMER_ID" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -d '{
+    "name": "Alice Johnson",
+    "phone": "+1111111111"
+  }' | python3 -m json.tool
+
+# 3.5 Delete a customer (soft delete) (replace CUSTOMER_ID)
+curl -s -X DELETE "$BASE/api/v1/customers/CUSTOMER_ID" \
+  -H "X-API-Key: $API_KEY" | python3 -m json.tool
+
+
+================================================================================
+  4. PAYMENTS — Create (pending)
+================================================================================
+
+# 4.1 Create a payment WITHOUT confirming (status: pending)
+curl -s -X POST "$BASE/api/v1/payments" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -d '{
+    "amount": 5000,
+    "currency": "usd",
+    "payment_method_id": "pm_card_visa",
+    "confirm": false,
+    "description": "VIP Concert Ticket",
+    "metadata": {"event_id": "evt_001", "ticket_type": "VIP"}
+  }' | python3 -m json.tool
+
+# 4.2 Create a payment WITH confirm (status: succeeded immediately)
+curl -s -X POST "$BASE/api/v1/payments" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -d '{
+    "amount": 2500,
+    "currency": "eur",
+    "payment_method_id": "pm_card_visa",
+    "confirm": true,
+    "description": "General Admission Ticket"
+  }' | python3 -m json.tool
+
+# 4.3 Create a payment that FAILS (declined card)
+curl -s -X POST "$BASE/api/v1/payments" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -d '{
+    "amount": 1000,
+    "currency": "usd",
+    "payment_method_id": "pm_card_chargeDeclined",
+    "confirm": true,
+    "description": "This should fail"
+  }' | python3 -m json.tool
+
+# 4.4 Create a payment with idempotency key (prevents duplicates)
+curl -s -X POST "$BASE/api/v1/payments" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -H "Idempotency-Key: unique-order-12345" \
+  -d '{
+    "amount": 7500,
+    "currency": "usd",
+    "payment_method_id": "pm_card_visa",
+    "confirm": true,
+    "description": "Idempotent payment test"
+  }' | python3 -m json.tool
+
+
+================================================================================
+  5. PAYMENTS — List & Get
+================================================================================
+
+# 5.1 List all payments
+curl -s "$BASE/api/v1/payments?limit=20&offset=0" \
+  -H "X-API-Key: $API_KEY" | python3 -m json.tool
+
+# 5.2 Filter payments by status
+curl -s "$BASE/api/v1/payments?status=succeeded&limit=10" \
+  -H "X-API-Key: $API_KEY" | python3 -m json.tool
+
+# 5.3 Get a specific payment (replace PAYMENT_ID)
+curl -s "$BASE/api/v1/payments/PAYMENT_ID" \
+  -H "X-API-Key: $API_KEY" | python3 -m json.tool
+
+
+================================================================================
+  6. PAYMENTS — Confirm (for payments created with confirm=false)
+================================================================================
+
+# 6.1 Confirm a pending payment (replace PAYMENT_ID)
+curl -s -X PUT "$BASE/api/v1/payments/PAYMENT_ID/confirm" \
+  -H "X-API-Key: $API_KEY" | python3 -m json.tool
+
+
+================================================================================
+  7. PAYMENTS — Cancel / Refund (DELETE)
+================================================================================
+
+# 7.1 Cancel a PENDING payment (replace PAYMENT_ID)
+#     → status changes to "canceled"
+curl -s -X DELETE "$BASE/api/v1/payments/PAYMENT_ID" \
+  -H "X-API-Key: $API_KEY" | python3 -m json.tool
+
+# 7.2 Refund a SUCCEEDED payment (replace PAYMENT_ID)
+#     → status changes to "refunded", amount_refunded = full amount
+curl -s -X DELETE "$BASE/api/v1/payments/PAYMENT_ID" \
+  -H "X-API-Key: $API_KEY" | python3 -m json.tool
+
+
+================================================================================
+  8. RECEIPTS (for succeeded payments only)
+================================================================================
+
+# 8.1 Download receipt as PDF (replace PAYMENT_ID — must be "succeeded")
+curl -s "$BASE/api/v1/payments/PAYMENT_ID/receipt" \
+  -H "X-API-Key: $API_KEY" \
+  -o receipt.pdf
+
+# Opens the PDF (Linux)
+# xdg-open receipt.pdf
+
+
+================================================================================
+  STRIPE TEST CARDS
+================================================================================
+
+  pm_card_visa                              → Succeeds
+  pm_card_visa_debit                        → Succeeds (debit)
+  pm_card_mastercard                        → Succeeds
+  pm_card_chargeDeclined                    → Fails (decline)
+  pm_card_chargeDeclinedInsufficientFunds   → Fails (insufficient funds)
+  pm_card_chargeDeclinedFraudulent          → Fails (fraudulent)
+
+================================================================================

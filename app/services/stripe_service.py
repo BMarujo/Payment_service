@@ -33,7 +33,7 @@ class StripeService:
         currency: str,
         customer_id: Optional[str] = None,
         payment_method_id: Optional[str] = None,
-        confirm: bool = True,
+        confirm: bool = False,
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         idempotency_key: Optional[str] = None,

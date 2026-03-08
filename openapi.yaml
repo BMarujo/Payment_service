@@ -185,13 +185,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/payments/{payment_id}/confirm:
-    post:
+    delete:
       tags:
       - Payments
-      summary: Confirm a payment
-      description: Confirm/capture a pending payment intent.
-      operationId: confirm_payment_api_v1_payments__payment_id__confirm_post
+      summary: Cancel or refund a payment
+      description: 'Cancel or refund a payment depending on its current status:
+
+
+        - **Pending / processing / requires_action** → cancels the payment via Stripe
+
+        - **Succeeded** → automatically issues a full refund via Stripe
+
+
+        The payment status is updated accordingly (`canceled` or `refunded`).'
+      operationId: cancel_or_refund_payment_api_v1_payments__payment_id__delete
       parameters:
       - name: payment_id
         in: path
@@ -213,13 +220,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/payments/{payment_id}/cancel:
-    post:
+  /api/v1/payments/{payment_id}/confirm:
+    put:
       tags:
       - Payments
-      summary: Cancel a payment
-      description: Cancel a pending or processing payment.
-      operationId: cancel_payment_api_v1_payments__payment_id__cancel_post
+      summary: Confirm a payment
+      description: Confirm/capture a pending payment intent. Updates the existing
+        payment status to 'succeeded' (or 'requires_action' if further steps are needed).
+      operationId: confirm_payment_api_v1_payments__payment_id__confirm_put
       parameters:
       - name: payment_id
         in: path
@@ -245,7 +253,6 @@ paths:
     get:
       tags:
       - Payments
-      - Receipts
       summary: Download payment receipt
       description: Generate and download a PDF receipt for a succeeded payment.
       operationId: download_receipt_api_v1_payments__payment_id__receipt_get
@@ -264,123 +271,6 @@ paths:
             application/json:
               schema: {}
             application/pdf: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/refunds:
-    post:
-      tags:
-      - Refunds
-      summary: Create a refund
-      description: Create a refund for a succeeded payment. Supports partial refunds
-        by specifying an amount less than the original payment. Supports idempotency
-        via the `Idempotency-Key` header.
-      operationId: create_refund_api_v1_refunds_post
-      parameters:
-      - name: Idempotency-Key
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Idempotency-Key
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RefundCreate'
-      responses:
-        '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RefundResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Refunds
-      summary: List refunds
-      description: Retrieve a paginated list of refunds with optional filters.
-      operationId: list_refunds_api_v1_refunds_get
-      parameters:
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-          maximum: 100
-          minimum: 1
-          description: Items per page
-          default: 20
-          title: Limit
-        description: Items per page
-      - name: offset
-        in: query
-        required: false
-        schema:
-          type: integer
-          minimum: 0
-          description: Number of items to skip
-          default: 0
-          title: Offset
-        description: Number of items to skip
-      - name: payment_id
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          description: Filter by payment ID
-          title: Payment Id
-        description: Filter by payment ID
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RefundListResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/refunds/{refund_id}:
-    get:
-      tags:
-      - Refunds
-      summary: Get refund details
-      description: Retrieve details of a specific refund by its ID.
-      operationId: get_refund_api_v1_refunds__refund_id__get
-      parameters:
-      - name: refund_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Refund Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RefundResponse'
         '422':
           description: Validation Error
           content:
@@ -1342,124 +1232,6 @@ components:
       - updated_at
       title: PaymentResponse
       description: Payment response body.
-    RefundCreate:
-      properties:
-        payment_id:
-          type: string
-          format: uuid
-          title: Payment Id
-          description: ID of the payment to refund
-        amount:
-          anyOf:
-          - type: integer
-            exclusiveMinimum: 0.0
-          - type: 'null'
-          title: Amount
-          description: 'Refund amount in cents (default: full refund)'
-        reason:
-          type: string
-          title: Reason
-          description: 'Refund reason: duplicate, fraudulent, requested_by_customer,
-            other'
-          default: requested_by_customer
-        description:
-          anyOf:
-          - type: string
-            maxLength: 500
-          - type: 'null'
-          title: Description
-          description: Additional details
-      type: object
-      required:
-      - payment_id
-      title: RefundCreate
-      description: Request body to create a refund.
-      examples:
-      - amount: 2500
-        description: Customer changed mind about VIP upgrade
-        payment_id: 550e8400-e29b-41d4-a716-446655440000
-        reason: requested_by_customer
-    RefundListResponse:
-      properties:
-        items:
-          items:
-            $ref: '#/components/schemas/RefundResponse'
-          type: array
-          title: Items
-        total:
-          type: integer
-          title: Total
-        limit:
-          type: integer
-          title: Limit
-        offset:
-          type: integer
-          title: Offset
-        has_more:
-          type: boolean
-          title: Has More
-      type: object
-      required:
-      - items
-      - total
-      - limit
-      - offset
-      - has_more
-      title: RefundListResponse
-      description: Paginated list of refunds.
-    RefundResponse:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        stripe_refund_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Stripe Refund Id
-        payment_id:
-          type: string
-          format: uuid
-          title: Payment Id
-        amount:
-          type: integer
-          title: Amount
-        reason:
-          type: string
-          title: Reason
-        status:
-          type: string
-          title: Status
-        description:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Description
-        idempotency_key:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Idempotency Key
-        created_at:
-          type: string
-          format: date-time
-          title: Created At
-        updated_at:
-          type: string
-          format: date-time
-          title: Updated At
-      type: object
-      required:
-      - id
-      - payment_id
-      - amount
-      - reason
-      - status
-      - created_at
-      - updated_at
-      title: RefundResponse
-      description: Refund response body.
     ValidationError:
       properties:
         loc:
@@ -1491,13 +1263,9 @@ components:
         payment/refund/customer operations.
 tags:
 - name: Payments
-  description: Create, retrieve, confirm, and cancel payments.
-- name: Refunds
-  description: Create and manage refunds for existing payments.
+  description: Create, retrieve, confirm, cancel/refund payments, and download receipts.
 - name: Customers
   description: Manage customers synced with Stripe.
-- name: Receipts
-  description: Generate and download PDF receipts.
 - name: Webhooks
   description: Receive and process Stripe webhook events.
 - name: API Keys

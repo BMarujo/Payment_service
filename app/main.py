@@ -81,19 +81,11 @@ def create_app() -> FastAPI:
         openapi_tags=[
             {
                 "name": "Payments",
-                "description": "Create, retrieve, confirm, and cancel payments.",
-            },
-            {
-                "name": "Refunds",
-                "description": "Create and manage refunds for existing payments.",
+                "description": "Create, retrieve, confirm, cancel/refund payments, and download receipts.",
             },
             {
                 "name": "Customers",
                 "description": "Manage customers synced with Stripe.",
-            },
-            {
-                "name": "Receipts",
-                "description": "Generate and download PDF receipts.",
             },
             {
                 "name": "Webhooks",

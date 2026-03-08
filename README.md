@@ -192,17 +192,11 @@ Use the **admin key** for `/api/v1/admin/*` endpoints. Use **tenant keys** for e
 | `POST` | `/api/v1/payments` | Create a payment |
 | `GET` | `/api/v1/payments` | List payments (paginated) |
 | `GET` | `/api/v1/payments/{id}` | Get payment details |
-| `POST` | `/api/v1/payments/{id}/confirm` | Confirm a payment |
-| `POST` | `/api/v1/payments/{id}/cancel` | Cancel a payment |
+| `PUT` | `/api/v1/payments/{id}/confirm` | Confirm a payment |
+| `DELETE` | `/api/v1/payments/{id}` | Cancel or refund a payment |
 | `GET` | `/api/v1/payments/{id}/receipt` | Download PDF receipt |
 
-### Refunds
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/refunds` | Create a refund |
-| `GET` | `/api/v1/refunds` | List refunds (paginated) |
-| `GET` | `/api/v1/refunds/{id}` | Get refund details |
+> **Note:** `DELETE` on a payment automatically **cancels** (if pending) or **refunds** (if already paid).
 
 ### Customers
 

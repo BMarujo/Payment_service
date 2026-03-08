@@ -130,6 +130,11 @@ class PaymentService:
         """Confirm/capture a pending payment."""
         payment = await self._get_payment_or_404(db, payment_id)
 
+        # Idempotent: if already succeeded (e.g. webhook beat us), just return it
+        if payment.status == PaymentStatus.SUCCEEDED:
+            logger.info(f"Payment {payment.id} already succeeded, returning current state")
+            return self._to_response(payment)
+
         if payment.status not in (PaymentStatus.PENDING, PaymentStatus.REQUIRES_ACTION):
             raise PaymentError(
                 f"Cannot confirm payment in '{payment.status.value}' status. "
@@ -149,31 +154,65 @@ class PaymentService:
         logger.info(f"Payment confirmed: {payment.id} new_status={payment.status}")
         return self._to_response(payment)
 
-    async def cancel_payment(
+    async def cancel_or_refund_payment(
         self, db: AsyncSession, payment_id: uuid.UUID
     ) -> PaymentResponse:
-        """Cancel a pending payment."""
+        """
+        Cancel or refund a payment depending on its current status:
+        - Pending/processing/requires_action → cancel via Stripe
+        - Succeeded → full refund via Stripe
+        """
         payment = await self._get_payment_or_404(db, payment_id)
 
-        if payment.status not in (
+        cancelable = (
             PaymentStatus.PENDING,
             PaymentStatus.REQUIRES_ACTION,
             PaymentStatus.PROCESSING,
-        ):
+        )
+
+        if payment.status in cancelable:
+            # ── Cancel path ──
+            if payment.stripe_payment_intent_id:
+                await stripe_service.cancel_payment_intent(
+                    payment.stripe_payment_intent_id
+                )
+            payment.status = PaymentStatus.CANCELED
+            logger.info(f"Payment canceled: {payment.id}")
+
+        elif payment.status == PaymentStatus.SUCCEEDED:
+            # ── Refund path ──
+            if not payment.stripe_payment_intent_id:
+                raise PaymentError("Payment has no associated Stripe PaymentIntent")
+
+            refund_amount = payment.amount - payment.amount_refunded
+            if refund_amount <= 0:
+                raise PaymentError("Payment has already been fully refunded")
+
+            await stripe_service.create_refund(
+                payment_intent_id=payment.stripe_payment_intent_id,
+                amount=refund_amount,
+                reason="requested_by_customer",
+            )
+
+            payment.amount_refunded = payment.amount
+            payment.status = PaymentStatus.REFUNDED
+            logger.info(f"Payment refunded: {payment.id} amount={refund_amount}")
+
+        elif payment.status in (PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED):
+            # Idempotent: already refunded, just return current state
+            logger.info(f"Payment {payment.id} already refunded, returning current state")
+            return self._to_response(payment)
+        elif payment.status == PaymentStatus.CANCELED:
+            # Idempotent: already canceled, just return current state
+            logger.info(f"Payment {payment.id} already canceled, returning current state")
+            return self._to_response(payment)
+        else:
             raise PaymentError(
-                f"Cannot cancel payment in '{payment.status.value}' status."
+                f"Cannot cancel or refund payment in '{payment.status.value}' status."
             )
 
-        if payment.stripe_payment_intent_id:
-            await stripe_service.cancel_payment_intent(
-                payment.stripe_payment_intent_id
-            )
-
-        payment.status = PaymentStatus.CANCELED
         await db.flush()
         await db.refresh(payment)
-
-        logger.info(f"Payment canceled: {payment.id}")
         return self._to_response(payment)
 
     async def update_payment_from_webhook(
