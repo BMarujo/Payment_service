@@ -82,6 +82,26 @@ async def stripe_webhook(
         # Refund events are handled at creation time; log for observability
         logger.info(f"Refund webhook event processed: {event_type}")
 
+    elif event_type == "checkout.session.completed":
+        # A hosted checkout session was paid — save the payment to our DB
+        session_obj = data_object
+        payment_intent_id = session_obj.get("payment_intent")
+        if payment_intent_id:
+            await payment_service.create_payment_from_checkout(
+                db=db,
+                stripe_payment_intent_id=payment_intent_id,
+                amount_total=session_obj.get("amount_total", 0),
+                currency=session_obj.get("currency", "usd"),
+                customer_email=session_obj.get("customer_email"),
+                metadata=session_obj.get("metadata", {}),
+                checkout_session_id=session_obj.get("id"),
+            )
+        else:
+            logger.warning(
+                f"Checkout session {session_obj.get('id')} completed "
+                f"but has no payment_intent"
+            )
+
     else:
         logger.info(f"Unhandled webhook event type: {event_type}")
 

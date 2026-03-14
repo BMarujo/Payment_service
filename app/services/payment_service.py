@@ -238,6 +238,62 @@ class PaymentService:
         )
         return payment
 
+    async def create_payment_from_checkout(
+        self,
+        db: AsyncSession,
+        stripe_payment_intent_id: str,
+        amount_total: int,
+        currency: str,
+        customer_email: str | None = None,
+        metadata: dict | None = None,
+        checkout_session_id: str | None = None,
+    ) -> Payment:
+        """Create a local payment record from a completed Checkout Session.
+
+        Called by the webhook handler when checkout.session.completed fires.
+        """
+        # Check if we already have this payment (idempotent)
+        result = await db.execute(
+            select(Payment).where(
+                Payment.stripe_payment_intent_id == stripe_payment_intent_id
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            logger.info(
+                f"Checkout payment already exists: {existing.id} "
+                f"(PI: {stripe_payment_intent_id})"
+            )
+            existing.status = PaymentStatus.SUCCEEDED
+            await db.flush()
+            return existing
+
+        # Store checkout metadata including session ID
+        payment_metadata = dict(metadata or {})
+        if checkout_session_id:
+            payment_metadata["checkout_session_id"] = checkout_session_id
+        if customer_email:
+            payment_metadata["customer_email"] = customer_email
+
+        payment = Payment(
+            stripe_payment_intent_id=stripe_payment_intent_id,
+            amount=amount_total,
+            currency=currency.lower(),
+            status=PaymentStatus.SUCCEEDED,
+            description=f"Checkout payment",
+            metadata_=payment_metadata,
+        )
+
+        db.add(payment)
+        await db.flush()
+        await db.refresh(payment)
+
+        logger.info(
+            f"Created payment from checkout: {payment.id} "
+            f"amount={amount_total} currency={currency}"
+        )
+        return payment
+
     # ── Helpers ───────────────────────────────────────
 
     async def _get_payment_or_404(

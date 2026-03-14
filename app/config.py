@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     # ── Stripe ───────────────────────────────
     stripe_secret_key: str = Field(default="sk_test_placeholder")
+    stripe_publishable_key: str = Field(default="pk_test_placeholder")
     stripe_webhook_secret: str = Field(default="whsec_placeholder")
 
     # ── Rate Limiting ────────────────────────

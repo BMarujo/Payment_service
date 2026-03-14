@@ -4,7 +4,7 @@
   Replace API_KEY with your tenant key (or admin key for admin endpoints).
 ================================================================================
 
-API_KEY="ps_live_af20121084e52d543947ba5fc1a45d59047e0695f0f1abdf"
+API_KEY="ps_live_bba2ee5f593a7196a635e6f024169d37f28ab463bf3b6e9f"
 ADMIN_KEY="your-admin-api-key-here"
 BASE="http://localhost:8000"
 
@@ -55,10 +55,44 @@ curl -s -X DELETE "$BASE/api/v1/admin/api-keys/KEY_ID" \
 
 
 ================================================================================
-  3. CUSTOMERS
+  3. CHECKOUT SESSIONS (Custom API-Driven Hosted Checkout)
+     Creates a local checkout session and returns a URL to your custom UI.
 ================================================================================
 
-# 3.1 Create a customer
+# 3.1 Create a checkout session (returns local checkout_url)
+curl -s -X POST "$BASE/api/v1/checkout/sessions" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -d '{
+    "line_items": [
+      {"name": "VIP Concert Ticket", "quantity": 2, "price": 5000},
+      {"name": "Parking Pass", "quantity": 1, "price": 1500}
+    ],
+    "currency": "usd",
+    "success_url": "https://mytickets.com/order/123/success",
+    "cancel_url": "https://mytickets.com/order/123/cancel",
+    "customer_email": "alice@example.com",
+    "customer_name": "Alice Smith",
+    "metadata": {"order_id": "order_123", "event_id": "evt_456"}
+  }' | python3 -m json.tool
+
+# → Copy the "session_id" from the response
+
+# 3.2 Check session status (replace SESSION_ID)
+curl -s "$BASE/api/v1/checkout/sessions/SESSION_ID" \
+  -H "X-API-Key: $API_KEY" | python3 -m json.tool
+
+# 3.3 [PUBLIC] Process Payment for a Checkout Session (used by the frontend UI)
+# This creates the actual Payment database row and returns a Stripe client_secret.
+curl -s -X POST "$BASE/api/v1/checkout/sessions/SESSION_ID/pay" \
+  -H "Content-Type: application/json" | python3 -m json.tool
+
+
+================================================================================
+  4. CUSTOMERS
+================================================================================
+
+# 4.1 Create a customer
 curl -s -X POST "$BASE/api/v1/customers" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $API_KEY" \
@@ -69,15 +103,15 @@ curl -s -X POST "$BASE/api/v1/customers" \
     "metadata": {"plan": "premium"}
   }' | python3 -m json.tool
 
-# 3.2 List customers
+# 4.2 List customers
 curl -s "$BASE/api/v1/customers?limit=10&offset=0" \
   -H "X-API-Key: $API_KEY" | python3 -m json.tool
 
-# 3.3 Get a specific customer (replace CUSTOMER_ID)
+# 4.3 Get a specific customer (replace CUSTOMER_ID)
 curl -s "$BASE/api/v1/customers/CUSTOMER_ID" \
   -H "X-API-Key: $API_KEY" | python3 -m json.tool
 
-# 3.4 Update a customer (replace CUSTOMER_ID)
+# 4.4 Update a customer (replace CUSTOMER_ID)
 curl -s -X PUT "$BASE/api/v1/customers/CUSTOMER_ID" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $API_KEY" \
@@ -86,7 +120,7 @@ curl -s -X PUT "$BASE/api/v1/customers/CUSTOMER_ID" \
     "phone": "+1111111111"
   }' | python3 -m json.tool
 
-# 3.5 Delete a customer (soft delete) (replace CUSTOMER_ID)
+# 4.5 Delete a customer (soft delete) (replace CUSTOMER_ID)
 curl -s -X DELETE "$BASE/api/v1/customers/CUSTOMER_ID" \
   -H "X-API-Key: $API_KEY" | python3 -m json.tool
 

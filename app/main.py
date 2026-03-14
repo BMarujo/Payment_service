@@ -8,7 +8,8 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.models import APIKey, APIKeyIn, SecuritySchemeType
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.health import router as health_router
 from app.api.v1.router import router as v1_router
@@ -79,6 +80,14 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
         swagger_ui_parameters={"persistAuthorization": True},
         openapi_tags=[
+            {
+                "name": "Checkout",
+                "description": (
+                    "**Start here.** Create a hosted checkout session and redirect "
+                    "the end-user to Stripe's payment page. This is the main "
+                    "integration point for client services."
+                ),
+            },
             {
                 "name": "Payments",
                 "description": "Create, retrieve, confirm, cancel/refund payments, and download receipts.",
@@ -161,10 +170,17 @@ def create_app() -> FastAPI:
         corr_id = request.headers.get("X-Correlation-ID", generate_correlation_id())
         correlation_id_ctx.set(corr_id)
 
-        # 2. Skip auth and rate limiting for health, docs, webhooks, and openapi
+        # 2. Skip auth and rate limiting for health, docs, webhooks, openapi, and the public checkout page
         path = request.url.path
-        skip_paths = ("/health", "/ready", "/docs", "/redoc", "/openapi.json", "/api/v1/webhooks")
+        skip_paths = ("/health", "/ready", "/docs", "/redoc", "/openapi.json", "/api/v1/webhooks", "/checkout/", "/static")
         skip_auth = any(path.startswith(p) for p in skip_paths)
+        
+        # Make GET /sessions/{id} and POST /sessions/{id}/pay public
+        if path.startswith("/api/v1/checkout/sessions/"):
+            # Only allow if there's a specific ID after /sessions/
+            parts = path.split("/")
+            if len(parts) >= 6 and parts[5]:  # /api/v1/checkout/sessions/{id}
+                skip_auth = True
 
         rate_headers = {}
 
@@ -274,6 +290,16 @@ def create_app() -> FastAPI:
     # ── Routers ──────────────────────────────────────
     app.include_router(health_router)
     app.include_router(v1_router)
+
+    # ── Static Files & Frontend ──────────────────────
+    import os
+    os.makedirs("app/static", exist_ok=True)
+    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+    @app.get("/checkout/{session_id}", response_class=FileResponse, tags=["Checkout UI"])
+    async def render_checkout(session_id: str):
+        """Serve the hosted checkout HTML page."""
+        return FileResponse("app/static/checkout.html")
 
     return app
 

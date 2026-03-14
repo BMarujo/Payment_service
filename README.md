@@ -185,6 +185,22 @@ Created via the admin endpoints. Each key:
 All endpoints (except health and webhooks) require the `X-API-Key` header.
 Use the **admin key** for `/api/v1/admin/*` endpoints. Use **tenant keys** for everything else.
 
+### Checkout Sessions (Hosted Payment Flow)
+
+This is the **main integration point** for client services. Works like PayPal — the client redirects the end-user to a Stripe-hosted payment page.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/checkout/sessions` | Create a checkout session (returns `checkout_url`) |
+| `GET` | `/api/v1/checkout/sessions/{session_id}` | Check session status (open/complete/expired) |
+
+**How it works:**
+1. Client calls `POST /api/v1/checkout/sessions` with line items, amount, and redirect URLs
+2. Response includes a `checkout_url` — redirect the end-user's browser there
+3. Stripe's hosted page collects card details, handles 3D Secure, Apple/Google Pay
+4. After payment, user is redirected to the client's `success_url`
+5. Webhook confirms payment → saved to our DB automatically
+
 ### Payments
 
 | Method | Endpoint | Description |

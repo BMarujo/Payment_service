@@ -13,7 +13,7 @@ class PaymentCreate(BaseModel):
     """Request body to create a new payment."""
     amount: int = Field(..., gt=0, description="Amount in smallest currency unit (e.g., cents)")
     currency: str = Field(default="usd", min_length=3, max_length=3, description="ISO 4217 currency code")
-    customer_id: Optional[UUID] = Field(default=None, description="ID of the customer in our system")
+    customer_id: UUID = Field(..., description="ID of the customer in our system")
     payment_method_id: Optional[str] = Field(default=None, description="Stripe payment method ID (e.g., pm_card_visa)")
     description: Optional[str] = Field(default=None, max_length=500, description="Payment description")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Arbitrary key-value metadata")
