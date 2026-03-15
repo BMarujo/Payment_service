@@ -62,6 +62,15 @@ class CheckoutSessionCreate(BaseModel):
     }
 
 
+class CheckoutAuthorizeRequest(BaseModel):
+    password: str = Field(..., description="Customer's wallet password to authorize the transaction")
+
+class CheckoutAuthorizeResponse(BaseModel):
+    status: str = Field(..., description="Authorization status (e.g. 'succeeded')")
+    payment_id: UUID = Field(..., description="ID of the completed internal payment")
+    success_url: str = Field(..., description="URL to redirect the customer to upon success")
+
+
 class CheckoutSessionResponse(BaseModel):
     """Response after creating a checkout session.
 

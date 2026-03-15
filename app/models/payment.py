@@ -47,7 +47,11 @@ class Payment(Base):
     amount = Column(Integer, nullable=False)          # Amount in smallest currency unit (cents)
     currency = Column(String(3), nullable=False, default="usd")
     status = Column(
-        Enum(PaymentStatus, name="payment_status"),
+        Enum(
+            PaymentStatus, 
+            name="payment_status",
+            values_callable=lambda obj: [e.value for e in obj]
+        ),
         nullable=False,
         default=PaymentStatus.PENDING,
         index=True,

@@ -17,6 +17,12 @@ from app.schemas.customer import (
     CustomerResponse,
     CustomerListResponse,
 )
+from app.schemas.payment import PaymentListResponse, PaymentResponse
+from app.models.payment import Payment
+from app.models.customer import Customer
+from app.api.deps import get_current_customer
+from sqlalchemy.future import select
+from sqlalchemy import func
 from app.services.customer_service import customer_service
 
 logger = logging.getLogger(__name__)
@@ -56,6 +62,36 @@ async def list_customers(
         offset=offset,
         email=email,
     )
+
+
+@router.get(
+    "/me/transactions",
+    response_model=PaymentListResponse,
+    summary="Get my transactions",
+    description="Retrieve the payment history for the currently authenticated customer.",
+)
+async def get_my_transactions(
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
+    offset: int = Query(0, ge=0, description="Number of items to skip"),
+    current_customer: Customer = Depends(get_current_customer),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Payment)
+        .where(Payment.customer_id == current_customer.id)
+        .order_by(Payment.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    payments = result.scalars().all()
+    
+    # We also need total count for pagination, but the schema just needs items and total
+    count_res = await db.execute(
+        select(func.count(Payment.id)).where(Payment.customer_id == current_customer.id)
+    )
+    total = count_res.scalar_one()
+    from app.schemas.payment import PaymentListResponse
+    return PaymentListResponse(items=payments, total=total, limit=limit, offset=offset)
 
 
 @router.get(

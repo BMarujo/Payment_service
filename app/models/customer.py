@@ -22,6 +22,7 @@ class Customer(Base):
     email = Column(String(255), nullable=False, index=True)
     name = Column(String(255), nullable=True)
     phone = Column(String(50), nullable=True)
+    hashed_password = Column(String(255), nullable=True)
 
     # Metadata for external systems
     metadata_ = Column("metadata", JSONB, nullable=True, default=dict)

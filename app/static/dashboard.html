@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | Digital Wallet</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --surface-color: #1e293b;
+            --primary-color: #3b82f6;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --success-color: #10b981;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding: 2rem;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1rem;
+        }
+
+        .header h1 { font-size: 1.5rem; font-weight: 600; }
+        
+        button.logout {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        button.logout:hover {
+            border-color: var(--text-muted);
+        }
+
+        .card {
+            background-color: var(--surface-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .card-header {
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin-bottom: 1rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th { color: var(--text-muted); font-weight: 500; }
+        
+        tr:last-child td { border-bottom: none; }
+
+        .status {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status.succeeded { background-color: rgba(16, 185, 129, 0.2); color: var(--success-color); }
+        .status.pending { background-color: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+
+        .amount {
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>My Digital Wallet</h1>
+    <button class="logout" onclick="logout()">Sign Out</button>
+</div>
+
+<div class="card">
+    <div class="card-header">Transaction History</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="transaction-list">
+            <tr><td colspan="4" style="text-align:center; color: var(--text-muted);">Loading transactions...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    const token = localStorage.getItem('wallet_token');
+    
+    if (!token) {
+        window.location.href = '/app/register';
+    }
+
+    async function loadTransactions() {
+        try {
+            const resp = await fetch('/api/v1/customers/me/transactions', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (resp.status === 401) {
+                logout();
+                return;
+            }
+
+            const data = await resp.json();
+            const tbody = document.getElementById('transaction-list');
+            
+            if (data.items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--text-muted);">No transactions yet.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = data.items.map(tx => {
+                const date = new Date(tx.created_at).toLocaleDateString(undefined, {
+                    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                });
+                const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency: tx.currency }).format(tx.amount / 100);
+                
+                return `
+                    <tr>
+                        <td style="color: var(--text-muted); font-size: 0.875rem;">${date}</td>
+                        <td>${tx.description || 'Wallet Transfer'}</td>
+                        <td class="amount">${amount}</td>
+                        <td><span class="status ${tx.status}">${tx.status}</span></td>
+                    </tr>
+                `;
+            }).join('');
+            
+        } catch (err) {
+            console.error('Failed to load transactions:', err);
+        }
+    }
+
+    function logout() {
+        localStorage.removeItem('wallet_token');
+        window.location.href = '/app/register';
+    }
+
+    loadTransactions();
+</script>
+
+</body>
+</html>

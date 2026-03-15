@@ -9,7 +9,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, status, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,8 +21,13 @@ from app.models.customer import Customer
 from app.schemas.checkout import (
     CheckoutSessionCreate,
     CheckoutSessionResponse,
+    CheckoutAuthorizeRequest,
+    CheckoutAuthorizeResponse,
 )
-from app.utils.exceptions import NotFoundError
+from app.schemas.payment import PaymentCreate
+from app.services.payment_service import payment_service
+from app.services.auth_service import verify_password
+from app.utils.exceptions import NotFoundError, PaymentError
 
 logger = logging.getLogger(__name__)
 
@@ -110,52 +115,63 @@ async def create_checkout_session(
 
 
 @router.post(
-    "/sessions/{session_id}/pay",
-    summary="Process custom checkout payment",
-    description="Creates an internal PaymentIntent and returns the client_secret.",
+    "/sessions/{session_id}/authorize",
+    response_model=CheckoutAuthorizeResponse,
+    summary="Authorize a checkout session via Password",
 )
-async def process_checkout_payment(
+async def authorize_checkout_session(
     session_id: uuid.UUID,
+    data: CheckoutAuthorizeRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.payment_service import payment_service
-    from app.schemas.payment import PaymentCreate
-
-    result = await db.execute(select(CheckoutSession).where(CheckoutSession.id == session_id))
+    # Fetch session + customer eager load
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(CheckoutSession)
+        .options(selectinload(CheckoutSession.customer))
+        .where(CheckoutSession.id == session_id)
+    )
     session = result.scalar_one_or_none()
     
     if not session:
         raise NotFoundError("CheckoutSession", str(session_id))
-    
+        
     if session.status != "open":
-        raise ValueError("This checkout session is no longer open.")
-
-    # If the session already created a payment, reuse it
-    if session.payment_id:
-        payment_res = await db.execute(select(Payment).where(Payment.id == session.payment_id))
-        payment = payment_res.scalar_one_or_none()
-        if payment:
-            return {"client_secret": payment.client_secret}
-
-    # Create the internal payment (which creates the Stripe PaymentIntent)
-    payment_req = PaymentCreate(
+        raise HTTPException(
+            status_code=400, detail=f"Checkout session is already {session.status}"
+        )
+        
+    customer = session.customer
+    if not customer.hashed_password:
+        raise HTTPException(status_code=400, detail="Customer does not have a digital wallet password configured.")
+        
+    if not verify_password(data.password, customer.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid wallet password")
+        
+    # Create the internal payment as SUCCESS instantly (Internal Wallet simulation)
+    payment = Payment(
+        customer_id=customer.id,
         amount=session.amount_total,
         currency=session.currency,
-        customer_id=session.customer_id,
-        confirm=False,
-        description=f"Checkout Session: {session.id}",
-        metadata={"checkout_session_id": str(session.id), **(session.metadata_ or {})},
+        status="succeeded",
+        description=f"Digital Wallet Transfer for Session: {session.id}",
+        metadata_={"checkout_session_id": str(session.id), **(session.metadata_ or {})},
     )
+    db.add(payment)
+    await db.flush()
+    await db.refresh(payment)
     
-    # We use a unique idempotency key for this session
-    payment_res = await payment_service.create_payment(db, payment_req, idempotency_key=f"cs_{session.id}")
-    
-    # Link the payment to the session
-    session.payment_id = payment_res.id
+    # Mark session completed
+    session.payment_id = payment.id
+    session.status = "complete"
     db.add(session)
     await db.commit()
     
-    return {"client_secret": payment_res.client_secret}
+    return CheckoutAuthorizeResponse(
+        status="succeeded",
+        payment_id=payment.id,
+        success_url=session.success_url
+    )
 
 
 @router.get(

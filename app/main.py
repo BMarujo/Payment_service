@@ -34,10 +34,8 @@ async def lifespan(app: FastAPI):
         f"[env={settings.environment}]"
     )
 
-    # Create tables (in production, use Alembic migrations instead)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables created/verified")
+    # In production, use Alembic migrations instead of creating tables here.
+    logger.info("Database connection established")
 
     yield
 
@@ -172,14 +170,19 @@ def create_app() -> FastAPI:
 
         # 2. Skip auth and rate limiting for health, docs, webhooks, openapi, and the public checkout page
         path = request.url.path
-        skip_paths = ("/health", "/ready", "/docs", "/redoc", "/openapi.json", "/api/v1/webhooks", "/checkout/", "/static")
+        skip_paths = (
+            "/health", "/ready", "/docs", "/redoc", "/openapi.json", 
+            "/api/v1/webhooks", "/checkout/", "/static", "/app/", "/api/v1/auth/"
+        )
         skip_auth = any(path.startswith(p) for p in skip_paths)
         
-        # Make GET /sessions/{id} and POST /sessions/{id}/pay public
+        # Make GET /sessions/{id} and POST /sessions/{id}/authorize public
         if path.startswith("/api/v1/checkout/sessions/"):
             # Only allow if there's a specific ID after /sessions/
             parts = path.split("/")
             if len(parts) >= 6 and parts[5]:  # /api/v1/checkout/sessions/{id}
+                if request.method == "GET" or parts[-1] == "authorize":
+                    skip_auth = True
                 skip_auth = True
 
         rate_headers = {}
@@ -296,7 +299,23 @@ def create_app() -> FastAPI:
     os.makedirs("app/static", exist_ok=True)
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-    @app.get("/checkout/{session_id}", response_class=FileResponse, tags=["Checkout UI"])
+    @app.get("/app/register", summary="Digital Wallet Registration UI")
+    async def get_register_ui(request: Request):
+        from fastapi.templating import Jinja2Templates
+        import os
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "static"))
+        return templates.TemplateResponse("register.html", {"request": request})
+
+    @app.get("/app/dashboard", summary="Digital Wallet Dashboard UI")
+    async def get_dashboard_ui(request: Request):
+        from fastapi.templating import Jinja2Templates
+        import os
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "static"))
+        return templates.TemplateResponse("dashboard.html", {"request": request})
+
+    @app.get("/checkout/{session_id}", summary="Hosted Checkout UI", response_class=FileResponse, tags=["Checkout UI"])
     async def render_checkout(session_id: str):
         """Serve the hosted checkout HTML page."""
         return FileResponse("app/static/checkout.html")
