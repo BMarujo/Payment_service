@@ -84,14 +84,32 @@ async def get_my_transactions(
         .limit(limit)
     )
     payments = result.scalars().all()
-    
-    # We also need total count for pagination, but the schema just needs items and total
+
     count_res = await db.execute(
         select(func.count(Payment.id)).where(Payment.customer_id == current_customer.id)
     )
     total = count_res.scalar_one()
-    from app.schemas.payment import PaymentListResponse
-    return PaymentListResponse(items=payments, total=total, limit=limit, offset=offset)
+
+    items = [
+        PaymentResponse(
+            id=p.id,
+            stripe_payment_intent_id=p.stripe_payment_intent_id,
+            customer_id=p.customer_id,
+            amount=p.amount,
+            currency=p.currency,
+            status=p.status.value,
+            description=p.description,
+            payment_method_id=p.payment_method_id,
+            client_secret=p.client_secret,
+            metadata=p.metadata_,
+            amount_refunded=p.amount_refunded,
+            idempotency_key=p.idempotency_key,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
+        for p in payments
+    ]
+    return PaymentListResponse(items=items, total=total, limit=limit, offset=offset, has_more=(offset + limit) < total)
 
 
 @router.get(

@@ -27,6 +27,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY . .
 
+# Make entrypoint executable
+RUN chmod +x /app/entrypoint.sh
+
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /app
 
@@ -38,5 +41,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run with uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Run migrations then start the app
+CMD ["/app/entrypoint.sh"]

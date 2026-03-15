@@ -42,12 +42,20 @@ class Refund(Base):
     # Refund details
     amount = Column(Integer, nullable=False)  # Amount in smallest currency unit
     reason = Column(
-        Enum(RefundReason, name="refund_reason"),
+        Enum(
+            RefundReason,
+            name="refund_reason",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=False,
         default=RefundReason.REQUESTED_BY_CUSTOMER,
     )
     status = Column(
-        Enum(RefundStatus, name="refund_status"),
+        Enum(
+            RefundStatus,
+            name="refund_status",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=False,
         default=RefundStatus.PENDING,
         index=True,

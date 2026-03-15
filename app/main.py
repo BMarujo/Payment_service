@@ -56,8 +56,8 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         description=(
-            "Production-ready payment microservice with Stripe integration. "
-            "Provides a complete payment processing API including payments, "
+            "Production-ready payment API and native Digital Wallet interface. "
+            "Provides a complete payment processing API including checkouts, "
             "refunds, customer management, receipt generation, and webhook handling.\n\n"
             "## Authentication\n"
             "All API endpoints (except health checks and webhooks) require an "
@@ -82,8 +82,8 @@ def create_app() -> FastAPI:
                 "name": "Checkout",
                 "description": (
                     "**Start here.** Create a hosted checkout session and redirect "
-                    "the end-user to Stripe's payment page. This is the main "
-                    "integration point for client services."
+                    "the end-user to the custom Digital Wallet checkout page. This is the main "
+                    "integration point for client services to collect payments."
                 ),
             },
             {
@@ -92,7 +92,7 @@ def create_app() -> FastAPI:
             },
             {
                 "name": "Customers",
-                "description": "Manage customers synced with Stripe.",
+                "description": "Manage customers and query their Digital Wallet transaction history.",
             },
             {
                 "name": "Webhooks",
@@ -183,7 +183,6 @@ def create_app() -> FastAPI:
             if len(parts) >= 6 and parts[5]:  # /api/v1/checkout/sessions/{id}
                 if request.method == "GET" or parts[-1] == "authorize":
                     skip_auth = True
-                skip_auth = True
 
         rate_headers = {}
 

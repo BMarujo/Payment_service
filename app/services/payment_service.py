@@ -179,26 +179,26 @@ class PaymentService:
             payment.status = PaymentStatus.CANCELED
             logger.info(f"Payment canceled: {payment.id}")
 
-        elif payment.status == PaymentStatus.SUCCEEDED:
+        elif payment.status in (PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED):
             # ── Refund path ──
-            if not payment.stripe_payment_intent_id:
-                raise PaymentError("Payment has no associated Stripe PaymentIntent")
-
             refund_amount = payment.amount - payment.amount_refunded
             if refund_amount <= 0:
                 raise PaymentError("Payment has already been fully refunded")
 
-            await stripe_service.create_refund(
-                payment_intent_id=payment.stripe_payment_intent_id,
-                amount=refund_amount,
-                reason="requested_by_customer",
-            )
+            if payment.stripe_payment_intent_id:
+                # Stripe payment — refund via Stripe
+                await stripe_service.create_refund(
+                    payment_intent_id=payment.stripe_payment_intent_id,
+                    amount=refund_amount,
+                    reason="requested_by_customer",
+                )
 
+            # Update local record (works for both Stripe and wallet payments)
             payment.amount_refunded = payment.amount
             payment.status = PaymentStatus.REFUNDED
             logger.info(f"Payment refunded: {payment.id} amount={refund_amount}")
 
-        elif payment.status in (PaymentStatus.REFUNDED, PaymentStatus.PARTIALLY_REFUNDED):
+        elif payment.status == PaymentStatus.REFUNDED:
             # Idempotent: already refunded, just return current state
             logger.info(f"Payment {payment.id} already refunded, returning current state")
             return self._to_response(payment)

@@ -24,5 +24,5 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.now(timezone.utc) + timedelta(days=7)
         
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.stripe_webhook_secret, algorithm="HS256")
+    encoded_jwt = jwt.encode(to_encode, settings.jwt_secret, algorithm="HS256")
     return encoded_jwt

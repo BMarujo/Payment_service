@@ -21,11 +21,11 @@ async def get_current_customer(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     try:
         payload = jwt.decode(
             credentials.credentials,
-            settings.stripe_webhook_secret,
+            settings.jwt_secret,
             algorithms=["HS256"]
         )
         customer_id: str = payload.get("sub")
@@ -33,11 +33,11 @@ async def get_current_customer(
             raise credentials_exception
     except jwt.PyJWTError:
         raise credentials_exception
-        
-    result = await db.execute(select(Customer).where(cast(Customer.id, type_=str) == customer_id))
+
+    result = await db.execute(select(Customer).where(cast(Customer.id, String) == customer_id))
     customer = result.scalar_one_or_none()
-    
+
     if customer is None:
         raise credentials_exception
-        
+
     return customer

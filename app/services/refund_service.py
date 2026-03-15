@@ -43,9 +43,6 @@ class RefundService:
                 f"Only 'succeeded' or 'partially_refunded' payments can be refunded."
             )
 
-        if not payment.stripe_payment_intent_id:
-            raise RefundError("Payment has no associated Stripe PaymentIntent")
-
         # Calculate refund amount
         refund_amount = data.amount or (payment.amount - payment.amount_refunded)
         if refund_amount <= 0:
@@ -57,7 +54,40 @@ class RefundService:
                 f"Refund amount ({refund_amount}) exceeds maximum refundable amount ({max_refundable})"
             )
 
-        # Map reason
+        # Map reason enum
+        try:
+            reason_enum = RefundReason(data.reason)
+        except ValueError:
+            reason_enum = RefundReason.OTHER
+
+        if not payment.stripe_payment_intent_id:
+            # Internal wallet payment — process refund locally without Stripe
+            refund = Refund(
+                payment_id=data.payment_id,
+                amount=refund_amount,
+                reason=reason_enum,
+                status=RefundStatus.SUCCEEDED,
+                description=data.description,
+                idempotency_key=idempotency_key,
+            )
+            db.add(refund)
+
+            payment.amount_refunded += refund_amount
+            if payment.amount_refunded >= payment.amount:
+                payment.status = PaymentStatus.REFUNDED
+            else:
+                payment.status = PaymentStatus.PARTIALLY_REFUNDED
+
+            await db.flush()
+            await db.refresh(refund)
+
+            logger.info(
+                f"Wallet refund created: {refund.id} for payment {data.payment_id} "
+                f"amount={refund_amount} status={refund.status}"
+            )
+            return self._to_response(refund)
+
+        # Map reason for Stripe
         stripe_reason = None
         if data.reason in ("duplicate", "fraudulent", "requested_by_customer"):
             stripe_reason = data.reason
@@ -69,12 +99,6 @@ class RefundService:
             reason=stripe_reason,
             idempotency_key=idempotency_key,
         )
-
-        # Map reason enum
-        try:
-            reason_enum = RefundReason(data.reason)
-        except ValueError:
-            reason_enum = RefundReason.OTHER
 
         # Persist refund
         refund = Refund(

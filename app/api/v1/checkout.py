@@ -41,10 +41,10 @@ router = APIRouter(prefix="/checkout", tags=["Checkout"])
     summary="Create a custom checkout session",
     description=(
         "Create a hosted checkout session. Returns a `checkout_url` — "
-        "redirect the end-user's browser to that URL to collect payment.\n\n"
+        "redirect the end-user's browser to that URL to collect their custom Digital Wallet authorization.\n\n"
         "**This is the main integration point for client services.** "
-        "The client only needs to call this endpoint, redirect the user, "
-        "and wait for the success redirect."
+        "The client only needs to call this endpoint, redirect the user to the local UI, "
+        "and wait for the success callback redirect."
     ),
 )
 async def create_checkout_session(

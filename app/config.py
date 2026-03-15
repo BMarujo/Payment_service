@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # ── Redis ────────────────────────────────
     redis_url: str = Field(default="redis://redis:6379/0")
 
+    # ── JWT ──────────────────────────────────
+    jwt_secret: str = Field(default="change-me-jwt-secret-in-production")
+
     # ── Stripe ───────────────────────────────
     stripe_secret_key: str = Field(default="sk_test_placeholder")
     stripe_publishable_key: str = Field(default="pk_test_placeholder")
