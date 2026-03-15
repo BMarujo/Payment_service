@@ -41,7 +41,6 @@ class CustomerUpdate(BaseModel):
 class CustomerResponse(BaseModel):
     """Customer response body."""
     id: UUID
-    stripe_customer_id: Optional[str] = None
     email: str
     name: Optional[str] = None
     phone: Optional[str] = None

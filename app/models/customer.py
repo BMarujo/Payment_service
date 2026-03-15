@@ -1,5 +1,5 @@
 """
-Customer model — stores customer data synced with Stripe.
+Customer model — stores customer data for the Digital Wallet system.
 """
 
 import uuid
@@ -16,7 +16,6 @@ class Customer(Base):
     __tablename__ = "customers"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    stripe_customer_id = Column(String(255), unique=True, nullable=True, index=True)
 
     # Customer details
     email = Column(String(255), nullable=False, index=True)

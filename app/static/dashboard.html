@@ -125,7 +125,7 @@
     const token = localStorage.getItem('wallet_token');
     
     if (!token) {
-        window.location.href = '/app/register';
+        window.location.href = '/wallet/login';
     }
 
     async function loadTransactions() {
@@ -170,7 +170,7 @@
 
     function logout() {
         localStorage.removeItem('wallet_token');
-        window.location.href = '/app/register';
+        window.location.href = '/wallet/login';
     }
 
     loadTransactions();

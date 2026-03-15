@@ -33,43 +33,16 @@ class TestPaymentService:
     def sample_payment(self):
         return Payment(
             id=uuid.uuid4(),
-            stripe_payment_intent_id="pi_test_123",
             amount=5000,
             currency="usd",
             status=PaymentStatus.SUCCEEDED,
             description="Test payment",
-            payment_method_id="pm_card_visa",
-            client_secret="pi_test_123_secret",
             metadata_={"order_id": "123"},
             amount_refunded=0,
             idempotency_key=None,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
-
-    def test_map_stripe_status_succeeded(self, payment_service):
-        """Test Stripe status mapping for succeeded."""
-        assert payment_service._map_stripe_status("succeeded") == PaymentStatus.SUCCEEDED
-
-    def test_map_stripe_status_canceled(self, payment_service):
-        """Test Stripe status mapping for canceled."""
-        assert payment_service._map_stripe_status("canceled") == PaymentStatus.CANCELED
-
-    def test_map_stripe_status_processing(self, payment_service):
-        """Test Stripe status mapping for processing."""
-        assert payment_service._map_stripe_status("processing") == PaymentStatus.PROCESSING
-
-    def test_map_stripe_status_requires_action(self, payment_service):
-        """Test Stripe status mapping for requires_action."""
-        assert payment_service._map_stripe_status("requires_action") == PaymentStatus.REQUIRES_ACTION
-
-    def test_map_stripe_status_requires_payment_method(self, payment_service):
-        """Test Stripe status mapping for requires_payment_method -> pending."""
-        assert payment_service._map_stripe_status("requires_payment_method") == PaymentStatus.PENDING
-
-    def test_map_stripe_status_unknown(self, payment_service):
-        """Test Stripe status mapping for unknown status defaults to failed."""
-        assert payment_service._map_stripe_status("unknown_status") == PaymentStatus.FAILED
 
     def test_to_response(self, payment_service, sample_payment):
         """Test Payment model to response schema conversion."""
@@ -78,7 +51,6 @@ class TestPaymentService:
         assert response.amount == 5000
         assert response.currency == "usd"
         assert response.status == "succeeded"
-        assert response.stripe_payment_intent_id == "pi_test_123"
 
     @pytest.mark.asyncio
     async def test_get_payment_not_found(self, payment_service, mock_db):
@@ -104,28 +76,14 @@ class TestPaymentService:
         assert result.amount == 5000
 
     @pytest.mark.asyncio
-    async def test_cancel_payment_wrong_status(self, payment_service, mock_db, sample_payment):
-        """Test canceling a succeeded payment raises PaymentError."""
-        from app.utils.exceptions import PaymentError
-
+    async def test_confirm_already_succeeded(self, payment_service, mock_db, sample_payment):
+        """Test confirming an already succeeded payment returns idempotently."""
         mock_result = AsyncMock()
         mock_result.scalar_one_or_none.return_value = sample_payment
         mock_db.execute = AsyncMock(return_value=mock_result)
 
-        with pytest.raises(PaymentError):
-            await payment_service.cancel_payment(mock_db, sample_payment.id)
-
-    @pytest.mark.asyncio
-    async def test_confirm_payment_wrong_status(self, payment_service, mock_db, sample_payment):
-        """Test confirming a succeeded payment raises PaymentError."""
-        from app.utils.exceptions import PaymentError
-
-        mock_result = AsyncMock()
-        mock_result.scalar_one_or_none.return_value = sample_payment
-        mock_db.execute = AsyncMock(return_value=mock_result)
-
-        with pytest.raises(PaymentError):
-            await payment_service.confirm_payment(mock_db, sample_payment.id)
+        result = await payment_service.confirm_payment(mock_db, sample_payment.id)
+        assert result.status == "succeeded"
 
 
 class TestPaymentStatusEnum:

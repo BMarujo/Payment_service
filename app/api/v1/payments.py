@@ -27,9 +27,8 @@ router = APIRouter(prefix="/payments", tags=["Payments"])
     status_code=status.HTTP_201_CREATED,
     summary="Create a payment",
     description=(
-        "Create a new payment intent via Stripe. Use Stripe test payment methods "
-        "like `pm_card_visa` for testing. Supports idempotency via the "
-        "`Idempotency-Key` header."
+        "Create a new payment via the Digital Wallet system. "
+        "Supports idempotency via the `Idempotency-Key` header."
     ),
 )
 async def create_payment(
@@ -115,8 +114,8 @@ async def confirm_payment(
     summary="Cancel or refund a payment",
     description=(
         "Cancel or refund a payment depending on its current status:\n\n"
-        "- **Pending / processing / requires_action** → cancels the payment via Stripe\n"
-        "- **Succeeded** → automatically issues a full refund via Stripe\n\n"
+        "- **Pending / processing / requires_action** → cancels the payment\n"
+        "- **Succeeded / partially_refunded** → automatically issues a full refund\n\n"
         "The payment status is updated accordingly (`canceled` or `refunded`)."
     ),
 )

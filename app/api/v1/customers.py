@@ -35,7 +35,7 @@ router = APIRouter(prefix="/customers", tags=["Customers"])
     response_model=CustomerResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a customer",
-    description="Create a new customer in the system and Stripe.",
+    description="Create a new customer in the system.",
 )
 async def create_customer(
     data: CustomerCreate,
@@ -93,14 +93,11 @@ async def get_my_transactions(
     items = [
         PaymentResponse(
             id=p.id,
-            stripe_payment_intent_id=p.stripe_payment_intent_id,
             customer_id=p.customer_id,
             amount=p.amount,
             currency=p.currency,
             status=p.status.value,
             description=p.description,
-            payment_method_id=p.payment_method_id,
-            client_secret=p.client_secret,
             metadata=p.metadata_,
             amount_refunded=p.amount_refunded,
             idempotency_key=p.idempotency_key,
@@ -145,7 +142,7 @@ async def update_customer(
     "/{customer_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a customer",
-    description="Soft-delete a customer from the system and Stripe.",
+    description="Soft-delete a customer.",
 )
 async def delete_customer(
     customer_id: UUID,

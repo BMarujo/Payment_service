@@ -1,18 +1,18 @@
-# 💳 Payment Service
+# Payment Service
 
-A **production-ready payment microservice** built with FastAPI and Stripe, designed for microservices architectures. Fully independent — integrate it into event ticketing platforms, e-commerce systems, SaaS products, or any application that needs payment processing.
+A **production-ready payment microservice** built with FastAPI and a Digital Wallet system, designed for microservices architectures. Fully independent — integrate it into event ticketing platforms, e-commerce systems, SaaS products, or any application that needs payment processing.
 
 ---
 
-## ✨ Features
+## Features
 
 | Feature | Description |
 |---------|-------------|
-| **Stripe Integration** | Full PaymentIntent lifecycle — create, confirm, cancel |
+| **Digital Wallet** | Hosted checkout flow with password-based wallet authorization |
+| **Payments** | Full payment lifecycle — create, confirm, cancel, refund |
 | **Refunds** | Full and partial refunds with reason tracking |
-| **Customer Management** | CRUD synced with Stripe Customer objects |
+| **Customer Management** | CRUD with registration, login, and JWT authentication |
 | **PDF Receipts** | Auto-generated professional PDF receipts |
-| **Webhook Handling** | Stripe webhook receiver with signature verification |
 | **Multi-Tenant API Keys** | Database-backed API key management with SHA-256 hashing |
 | **Idempotency** | `Idempotency-Key` header prevents duplicate operations |
 | **Rate Limiting** | Redis-backed sliding window rate limiter, per-key configurable |
@@ -25,7 +25,7 @@ A **production-ready payment microservice** built with FastAPI and Stripe, desig
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -34,10 +34,10 @@ A **production-ready payment microservice** built with FastAPI and Stripe, desig
 │  ┌──────────┐  ┌──────────┐  ┌──────────────────┐  │
 │  │ FastAPI   │  │ Middleware│  │ API v1 Router    │  │
 │  │ App       │→ │ Stack    │→ │                  │  │
-│  │           │  │ • Auth   │  │ • /payments      │  │
-│  │ • CORS    │  │ • Rate   │  │ • /refunds       │  │
-│  │ • Errors  │  │   Limit  │  │ • /customers     │  │
-│  │ • Logging │  │ • Corr ID│  │ • /webhooks      │  │
+│  │           │  │ • Auth   │  │ • /checkout      │  │
+│  │ • CORS    │  │ • Rate   │  │ • /payments      │  │
+│  │ • Errors  │  │   Limit  │  │ • /refunds       │  │
+│  │ • Logging │  │ • Corr ID│  │ • /customers     │  │
 │  │           │  │          │  │ • /admin/api-keys │  │
 │  └──────────┘  └──────────┘  └────────┬─────────┘  │
 │                                        │            │
@@ -45,7 +45,7 @@ A **production-ready payment microservice** built with FastAPI and Stripe, desig
 │  │              Service Layer                     │  │
 │  │  • PaymentService    • RefundService           │  │
 │  │  • CustomerService   • ReceiptService          │  │
-│  │  • StripeService     • ApiKeyService           │  │
+│  │  • AuthService       • ApiKeyService           │  │
 │  └──────────┬──────────────────┬─────────────────┘  │
 │             │                  │                     │
 │  ┌──────────▼──────┐  ┌───────▼──────────┐          │
@@ -55,23 +55,18 @@ A **production-ready payment microservice** built with FastAPI and Stripe, desig
 │  │  • Customers    │  │  • API key cache │          │
 │  │  • Receipts     │  │                  │          │
 │  │  • API Keys     │  │                  │          │
+│  │  • Checkout     │  │                  │          │
 │  └─────────────────┘  └──────────────────┘          │
-│             │                                        │
-│  ┌──────────▼──────────────────────────────────────┐ │
-│  │                  Stripe API                      │ │
-│  │  PaymentIntents • Refunds • Customers • Webhooks │ │
-│  └──────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - **Docker** & **Docker Compose** installed
-- **Stripe account** (free) — [sign up here](https://dashboard.stripe.com/register)
 
 ### 1. Clone and configure
 
@@ -84,22 +79,9 @@ cp .env.example .env
 
 Edit `.env` and set:
 - `ADMIN_API_KEY` — a strong secret for the admin bootstrap key
-- `STRIPE_SECRET_KEY` — your Stripe test key (`sk_test_...`)
+- `JWT_SECRET` — a strong secret for JWT token signing
 
-### 2. Set up Stripe
-
-1. Go to the [Stripe Dashboard](https://dashboard.stripe.com/test/apikeys)
-2. Copy your **Secret key** (starts with `sk_test_...`)
-3. Paste it into `.env` as `STRIPE_SECRET_KEY`
-
-For webhooks (optional for testing):
-1. Go to [Stripe Webhooks](https://dashboard.stripe.com/test/webhooks)
-2. Add endpoint: `http://your-domain:8000/api/v1/webhooks/stripe`
-3. Select events: `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.canceled`
-4. Copy the **Signing secret** (starts with `whsec_...`)
-5. Paste it into `.env` as `STRIPE_WEBHOOK_SECRET`
-
-### 3. Launch
+### 2. Launch
 
 ```bash
 # Build and start all services
@@ -115,7 +97,7 @@ curl http://localhost:8000/health
 curl http://localhost:8000/ready
 ```
 
-### 4. Create your first tenant API key
+### 3. Create your first tenant API key
 
 ```bash
 # Use your admin key to create a tenant key
@@ -127,7 +109,7 @@ curl -X POST http://localhost:8000/api/v1/admin/api-keys \
 
 The response includes a `raw_key` field (e.g., `ps_live_a1b2c3d4...`). **Save it — it's shown only once.**
 
-### 5. Explore the API
+### 4. Explore the API
 
 Open your browser:
 - **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -136,7 +118,7 @@ Open your browser:
 
 ---
 
-## 🔑 API Key Management
+## API Key Management
 
 The service uses a **two-tier authentication system**:
 
@@ -180,26 +162,33 @@ Created via the admin endpoints. Each key:
 
 ---
 
-## 📡 API Reference
+## API Reference
 
-All endpoints (except health and webhooks) require the `X-API-Key` header.
+All endpoints (except health and auth) require the `X-API-Key` header.
 Use the **admin key** for `/api/v1/admin/*` endpoints. Use **tenant keys** for everything else.
 
 ### Checkout Sessions (Hosted Payment Flow)
 
-This is the **main integration point** for client services. Works like PayPal — the client redirects the end-user to a Stripe-hosted payment page.
+This is the **main integration point** for client services. The client redirects the end-user to a hosted checkout page where they authorize payment with their Digital Wallet password.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/v1/checkout/sessions` | Create a checkout session (returns `checkout_url`) |
 | `GET` | `/api/v1/checkout/sessions/{session_id}` | Check session status (open/complete/expired) |
+| `POST` | `/api/v1/checkout/sessions/{session_id}/authorize` | Authorize payment with wallet password |
 
 **How it works:**
 1. Client calls `POST /api/v1/checkout/sessions` with line items, amount, and redirect URLs
 2. Response includes a `checkout_url` — redirect the end-user's browser there
-3. Stripe's hosted page collects card details, handles 3D Secure, Apple/Google Pay
-4. After payment, user is redirected to the client's `success_url`
-5. Webhook confirms payment → saved to our DB automatically
+3. The hosted checkout page collects the customer's Digital Wallet password
+4. After authorization, payment succeeds instantly and user is redirected to `success_url`
+
+### Authentication
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/auth/register` | Register a new customer with wallet password |
+| `POST` | `/api/v1/auth/login` | Login and receive a JWT token |
 
 ### Payments
 
@@ -223,12 +212,15 @@ This is the **main integration point** for client services. Works like PayPal �
 | `GET` | `/api/v1/customers/{id}` | Get customer details |
 | `PUT` | `/api/v1/customers/{id}` | Update customer |
 | `DELETE` | `/api/v1/customers/{id}` | Delete customer (soft) |
+| `GET` | `/api/v1/customers/me/transactions` | Get authenticated customer's transactions (JWT) |
 
-### Webhooks
+### Refunds
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/v1/webhooks/stripe` | Stripe webhook receiver |
+| `POST` | `/api/v1/refunds` | Create a refund |
+| `GET` | `/api/v1/refunds` | List refunds (paginated) |
+| `GET` | `/api/v1/refunds/{id}` | Get refund details |
 
 ### Health
 
@@ -239,7 +231,7 @@ This is the **main integration point** for client services. Works like PayPal �
 
 ---
 
-## 🧪 Usage Examples
+## Usage Examples
 
 ### Create a tenant API key (admin)
 
@@ -255,23 +247,38 @@ curl -X POST http://localhost:8000/api/v1/admin/api-keys \
     "rate_limit_window_seconds": 60
   }'
 # Response: { ..., "raw_key": "ps_live_abc123...", ... }
-# ⚠️  Save the raw_key — it's only shown once!
+# Save the raw_key — it's only shown once!
 ```
 
-### Create a customer
+### Register a customer
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/customers \
+curl -X POST http://localhost:8000/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: ps_live_<your_tenant_key>" \
   -d '{
     "email": "john@example.com",
     "name": "John Doe",
-    "phone": "+1234567890"
+    "password": "securepassword123"
   }'
 ```
 
-### Create a payment
+### Create a checkout session
+
+```bash
+curl -X POST http://localhost:8000/api/v1/checkout/sessions \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ps_live_<your_tenant_key>" \
+  -d '{
+    "line_items": [{"name": "VIP Concert Ticket", "quantity": 2, "price": 5000}],
+    "currency": "usd",
+    "success_url": "https://mytickets.com/order/123/success",
+    "cancel_url": "https://mytickets.com/order/123/cancel",
+    "customer_email": "john@example.com"
+  }'
+# Response includes checkout_url — redirect user there
+```
+
+### Create a direct payment
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/payments \
@@ -281,7 +288,7 @@ curl -X POST http://localhost:8000/api/v1/payments \
   -d '{
     "amount": 5000,
     "currency": "usd",
-    "payment_method_id": "pm_card_visa",
+    "customer_id": "<customer_uuid>",
     "description": "VIP Concert Ticket",
     "metadata": {
       "event_id": "evt_001",
@@ -297,33 +304,9 @@ curl "http://localhost:8000/api/v1/payments?status=succeeded&limit=10" \
   -H "X-API-Key: ps_live_<your_tenant_key>"
 ```
 
-### Revoke an API key (admin)
-
-```bash
-curl -X DELETE http://localhost:8000/api/v1/admin/api-keys/<KEY_UUID> \
-  -H "X-API-Key: $ADMIN_API_KEY"
-```
-
 ---
 
-## 🃏 Stripe Test Cards
-
-When using Stripe in test mode, use these payment method IDs:
-
-| Payment Method | Behavior |
-|---------------|----------|
-| `pm_card_visa` | Succeeds |
-| `pm_card_visa_debit` | Succeeds (debit) |
-| `pm_card_mastercard` | Succeeds |
-| `pm_card_chargeDeclined` | Fails (decline) |
-| `pm_card_chargeDeclinedInsufficientFunds` | Fails (insufficient funds) |
-| `pm_card_chargeDeclinedFraudulent` | Fails (fraudulent) |
-
-See the [Stripe Testing docs](https://docs.stripe.com/testing) for more test cards.
-
----
-
-## ⚙️ Environment Variables
+## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -332,41 +315,39 @@ See the [Stripe Testing docs](https://docs.stripe.com/testing) for more test car
 | `DEBUG` | false | Enable debug mode |
 | `ENVIRONMENT` | production | Environment name |
 | `ADMIN_API_KEY` | — | **Required.** Admin bootstrap key for managing tenant API keys |
+| `JWT_SECRET` | — | **Required.** Secret key for JWT token signing |
 | `DATABASE_URL` | — | PostgreSQL connection URL |
 | `REDIS_URL` | — | Redis connection URL |
-| `STRIPE_SECRET_KEY` | — | **Required.** Stripe secret key (`sk_test_...`) |
-| `STRIPE_WEBHOOK_SECRET` | — | Stripe webhook signing secret |
 | `RATE_LIMIT_REQUESTS` | 100 | Default max requests per window (overridable per key) |
 | `RATE_LIMIT_WINDOW_SECONDS` | 60 | Default rate limit window in seconds |
 | `LOG_LEVEL` | INFO | Logging level |
 
 ---
 
-## 🗄️ Database
+## Database
 
 The service uses **PostgreSQL** with **SQLAlchemy** (async) and **Alembic** for migrations.
 
 ### Tables
 
-- **customers** — Customer profiles synced with Stripe
+- **customers** — Customer profiles with wallet authentication
 - **payments** — Payment records with full lifecycle tracking
 - **refunds** — Refund records linked to payments
+- **checkout_sessions** — Hosted checkout session state
 - **receipts** — Generated PDF receipts stored as binary
 - **api_keys** — Hashed API keys with scopes, rate limits, and expiration
 
 ### Running migrations
 
-```bash
-# Auto-create tables on startup (development)
-# Tables are created automatically via SQLAlchemy on app start
+Migrations run automatically on container startup via `entrypoint.sh`. For manual execution:
 
-# Using Alembic for production migrations
+```bash
 docker compose exec api alembic upgrade head
 ```
 
 ---
 
-## 🧪 Running Tests
+## Running Tests
 
 ```bash
 # Run tests inside the container
@@ -378,7 +359,7 @@ docker compose exec api pytest tests/ -v --cov=app --cov-report=term-missing
 
 ---
 
-## 🛠️ Development
+## Development
 
 ### Hot reloading
 
@@ -411,20 +392,19 @@ docker compose logs -f
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Payment_service/
 ├── docker-compose.yml          # Multi-service Docker setup
 ├── Dockerfile                  # API container image
+├── entrypoint.sh               # Auto-migration + app startup
 ├── .env.example                # Environment template
 ├── requirements.txt            # Python dependencies
 ├── alembic.ini                 # Alembic config
 ├── alembic/                    # Database migrations
 │   ├── env.py
 │   └── versions/
-│       ├── 001_initial.py
-│       └── 002_api_keys.py
 ├── app/
 │   ├── main.py                 # FastAPI app factory
 │   ├── config.py               # Pydantic settings
@@ -433,33 +413,39 @@ Payment_service/
 │   │   ├── payment.py
 │   │   ├── refund.py
 │   │   ├── customer.py
+│   │   ├── checkout_session.py
 │   │   ├── receipt.py
 │   │   └── api_key.py
 │   ├── schemas/                # Pydantic request/response schemas
 │   │   ├── payment.py
 │   │   ├── refund.py
 │   │   ├── customer.py
+│   │   ├── checkout.py
 │   │   ├── receipt.py
-│   │   ├── api_key.py
-│   │   └── common.py
+│   │   └── api_key.py
 │   ├── api/v1/                 # API endpoints
 │   │   ├── router.py
 │   │   ├── payments.py
 │   │   ├── refunds.py
 │   │   ├── customers.py
-│   │   ├── webhooks.py
+│   │   ├── checkout.py
+│   │   ├── auth.py
 │   │   ├── api_keys.py
 │   │   └── health.py
 │   ├── services/               # Business logic
-│   │   ├── stripe_service.py
 │   │   ├── payment_service.py
 │   │   ├── refund_service.py
 │   │   ├── customer_service.py
 │   │   ├── receipt_service.py
+│   │   ├── auth_service.py
 │   │   └── api_key_service.py
 │   ├── middleware/             # Cross-cutting concerns
 │   │   ├── idempotency.py
 │   │   └── rate_limiter.py
+│   ├── static/                # Frontend HTML pages
+│   │   ├── checkout.html
+│   │   ├── register.html
+│   │   └── dashboard.html
 │   └── utils/                  # Shared utilities
 │       ├── exceptions.py
 │       └── logging.py
@@ -468,13 +454,12 @@ Payment_service/
     ├── test_payments.py
     ├── test_refunds.py
     ├── test_customers.py
-    ├── test_webhooks.py
     └── test_api_keys.py
 ```
 
 ---
 
-## 🔌 Integration Guide
+## Integration Guide
 
 ### As a microservice
 
@@ -483,33 +468,28 @@ This service is designed to be called by other services in your platform:
 1. **Set `ADMIN_API_KEY`** in `.env` when deploying
 2. **Create a tenant API key** for each consuming service via `POST /api/v1/admin/api-keys`
 3. **Share the tenant key** with the consuming service (shown only once at creation)
-4. **Create customers** when users register on your platform
-5. **Create payments** when processing orders/tickets
-6. **Handle webhooks** for async payment status updates
+4. **Register customers** via the auth endpoint or create them via the API
+5. **Create checkout sessions** to collect payments through the hosted UI
+6. **Create direct payments** for server-to-server payment processing
 7. **Generate receipts** after successful payments
 
 ### Example: Event Ticketing Integration
 
 ```
 ┌──────────────┐     ┌─────────────────┐     ┌──────────────┐
-│  Frontend    │────▶│  Ticket Service  │────▶│  Payment     │
+│  Frontend    │────>│  Ticket Service  │────>│  Payment     │
 │  (React)     │     │  (your service)  │     │  Service     │
-└──────────────┘     └─────────────────┘     └──────┬───────┘
-                                                     │
-                                              ┌──────▼───────┐
-                                              │   Stripe     │
-                                              └──────────────┘
+└──────────────┘     └─────────────────┘     └──────────────┘
 ```
 
 1. Admin creates a tenant API key for the Ticket Service
 2. Frontend creates an order via Ticket Service
-3. Ticket Service calls Payment Service `POST /api/v1/payments` using its tenant key
-4. Payment Service processes via Stripe and returns result
-5. Ticket Service confirms the ticket reservation
-6. Stripe sends webhook → Payment Service updates status
+3. Ticket Service calls `POST /api/v1/checkout/sessions` using its tenant key
+4. User is redirected to the checkout page and authorizes with wallet password
+5. Payment succeeds instantly — Ticket Service confirms the reservation
 
 ---
 
-## 📄 License
+## License
 
 MIT

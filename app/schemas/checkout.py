@@ -5,7 +5,7 @@ Checkout session request/response schemas.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 from uuid import UUID
 
 
@@ -30,10 +30,7 @@ class CheckoutSessionCreate(BaseModel):
     currency: str = Field(default="usd", min_length=3, max_length=3, description="ISO 4217 currency code")
     success_url: str = Field(
         ...,
-        description=(
-            "URL to redirect the customer after successful payment. "
-            "Stripe appends `?session_id={CHECKOUT_SESSION_ID}` automatically."
-        ),
+        description="URL to redirect the customer after successful payment.",
     )
     cancel_url: str = Field(
         ...,
@@ -76,8 +73,7 @@ class CheckoutSessionResponse(BaseModel):
 
     Redirect the end-user's browser to `checkout_url` to complete payment.
     """
-    session_id: str = Field(..., description="Local Checkout Session ID")
-    publishable_key: str = Field(..., description="Stripe Publishable Key for frontend initialization")
+    session_id: str = Field(..., description="Checkout Session ID")
     line_items: Optional[List[CheckoutLineItem]] = Field(default=None, description="Items to display in the UI")
     checkout_url: str = Field(..., description="URL to redirect the customer to for payment")
     status: str = Field(..., description="Session status: open, complete, or expired")
@@ -87,6 +83,6 @@ class CheckoutSessionResponse(BaseModel):
     payment_status: str = Field(..., description="Payment status: unpaid, paid, or no_payment_required")
     amount_total: int = Field(..., description="Total amount in smallest currency unit")
     currency: str = Field(..., description="ISO 4217 currency code")
-    customer_name: str = Field(..., description="Pre-fill name on card")
-    customer_email: str = Field(..., description="Pre-fill email")
+    customer_name: str = Field(..., description="Customer name")
+    customer_email: str = Field(..., description="Customer email")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Metadata")

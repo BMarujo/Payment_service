@@ -1,17 +1,16 @@
 """
-Payment business logic — orchestrates Stripe calls and database operations.
+Payment business logic — orchestrates Digital Wallet payments and database operations.
 """
 
 import logging
 import uuid
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.payment import Payment, PaymentStatus
 from app.schemas.payment import PaymentCreate, PaymentResponse, PaymentListResponse
-from app.services.stripe_service import stripe_service
 from app.utils.exceptions import NotFoundError, PaymentError
 
 logger = logging.getLogger(__name__)
@@ -26,10 +25,9 @@ class PaymentService:
         data: PaymentCreate,
         idempotency_key: Optional[str] = None,
     ) -> PaymentResponse:
-        """Create a new payment, sync with Stripe, and persist to DB."""
+        """Create a new payment and persist to DB."""
 
-        # Look up Stripe customer ID if customer_id provided
-        stripe_customer_id = None
+        # Verify customer exists
         if data.customer_id:
             from app.models.customer import Customer
 
@@ -39,42 +37,14 @@ class PaymentService:
             customer = result.scalar_one_or_none()
             if not customer:
                 raise NotFoundError("Customer", str(data.customer_id))
-            stripe_customer_id = customer.stripe_customer_id
 
-        # Convert metadata values to strings for Stripe
-        stripe_metadata = {}
-        if data.metadata:
-            stripe_metadata = {k: str(v) for k, v in data.metadata.items()}
-
-        # Create Stripe PaymentIntent
-        try:
-            intent = await stripe_service.create_payment_intent(
-                amount=data.amount,
-                currency=data.currency.lower(),
-                customer_id=stripe_customer_id,
-                payment_method_id=data.payment_method_id,
-                confirm=data.confirm,
-                description=data.description,
-                metadata=stripe_metadata,
-                idempotency_key=idempotency_key,
-            )
-        except Exception as e:
-            logger.error(f"Failed to create Stripe PaymentIntent: {e}")
-            raise
-
-        # Map Stripe status to our status enum
-        status = self._map_stripe_status(intent.status)
-
-        # Persist to database
+        # Persist to database — direct payments start as pending (use confirm to succeed)
         payment = Payment(
-            stripe_payment_intent_id=intent.id,
             customer_id=data.customer_id,
             amount=data.amount,
             currency=data.currency.lower(),
-            status=status,
+            status=PaymentStatus.PENDING,
             description=data.description,
-            payment_method_id=data.payment_method_id,
-            client_secret=intent.client_secret,
             metadata_=data.metadata,
             idempotency_key=idempotency_key,
         )
@@ -82,7 +52,7 @@ class PaymentService:
         await db.flush()
         await db.refresh(payment)
 
-        logger.info(f"Payment created: {payment.id} stripe_id={intent.id} status={status}")
+        logger.info(f"Payment created: {payment.id} status={payment.status}")
         return self._to_response(payment)
 
     async def get_payment(self, db: AsyncSession, payment_id: uuid.UUID) -> PaymentResponse:
@@ -127,10 +97,10 @@ class PaymentService:
     async def confirm_payment(
         self, db: AsyncSession, payment_id: uuid.UUID
     ) -> PaymentResponse:
-        """Confirm/capture a pending payment."""
+        """Confirm a pending payment."""
         payment = await self._get_payment_or_404(db, payment_id)
 
-        # Idempotent: if already succeeded (e.g. webhook beat us), just return it
+        # Idempotent: if already succeeded, just return it
         if payment.status == PaymentStatus.SUCCEEDED:
             logger.info(f"Payment {payment.id} already succeeded, returning current state")
             return self._to_response(payment)
@@ -141,13 +111,7 @@ class PaymentService:
                 f"Only 'pending' or 'requires_action' payments can be confirmed."
             )
 
-        if not payment.stripe_payment_intent_id:
-            raise PaymentError("Payment has no associated Stripe PaymentIntent")
-
-        intent = await stripe_service.confirm_payment_intent(
-            payment.stripe_payment_intent_id
-        )
-        payment.status = self._map_stripe_status(intent.status)
+        payment.status = PaymentStatus.SUCCEEDED
         await db.flush()
         await db.refresh(payment)
 
@@ -159,8 +123,8 @@ class PaymentService:
     ) -> PaymentResponse:
         """
         Cancel or refund a payment depending on its current status:
-        - Pending/processing/requires_action → cancel via Stripe
-        - Succeeded → full refund via Stripe
+        - Pending/processing/requires_action -> cancel
+        - Succeeded/partially_refunded -> full refund
         """
         payment = await self._get_payment_or_404(db, payment_id)
 
@@ -172,10 +136,6 @@ class PaymentService:
 
         if payment.status in cancelable:
             # ── Cancel path ──
-            if payment.stripe_payment_intent_id:
-                await stripe_service.cancel_payment_intent(
-                    payment.stripe_payment_intent_id
-                )
             payment.status = PaymentStatus.CANCELED
             logger.info(f"Payment canceled: {payment.id}")
 
@@ -185,25 +145,14 @@ class PaymentService:
             if refund_amount <= 0:
                 raise PaymentError("Payment has already been fully refunded")
 
-            if payment.stripe_payment_intent_id:
-                # Stripe payment — refund via Stripe
-                await stripe_service.create_refund(
-                    payment_intent_id=payment.stripe_payment_intent_id,
-                    amount=refund_amount,
-                    reason="requested_by_customer",
-                )
-
-            # Update local record (works for both Stripe and wallet payments)
             payment.amount_refunded = payment.amount
             payment.status = PaymentStatus.REFUNDED
             logger.info(f"Payment refunded: {payment.id} amount={refund_amount}")
 
         elif payment.status == PaymentStatus.REFUNDED:
-            # Idempotent: already refunded, just return current state
             logger.info(f"Payment {payment.id} already refunded, returning current state")
             return self._to_response(payment)
         elif payment.status == PaymentStatus.CANCELED:
-            # Idempotent: already canceled, just return current state
             logger.info(f"Payment {payment.id} already canceled, returning current state")
             return self._to_response(payment)
         else:
@@ -214,85 +163,6 @@ class PaymentService:
         await db.flush()
         await db.refresh(payment)
         return self._to_response(payment)
-
-    async def update_payment_from_webhook(
-        self, db: AsyncSession, stripe_payment_intent_id: str, stripe_status: str
-    ) -> Optional[Payment]:
-        """Update local payment record from a Stripe webhook event."""
-        result = await db.execute(
-            select(Payment).where(
-                Payment.stripe_payment_intent_id == stripe_payment_intent_id
-            )
-        )
-        payment = result.scalar_one_or_none()
-        if not payment:
-            logger.warning(
-                f"Webhook: PaymentIntent {stripe_payment_intent_id} not found locally"
-            )
-            return None
-
-        payment.status = self._map_stripe_status(stripe_status)
-        await db.flush()
-        logger.info(
-            f"Webhook updated payment {payment.id} to status={payment.status}"
-        )
-        return payment
-
-    async def create_payment_from_checkout(
-        self,
-        db: AsyncSession,
-        stripe_payment_intent_id: str,
-        amount_total: int,
-        currency: str,
-        customer_email: str | None = None,
-        metadata: dict | None = None,
-        checkout_session_id: str | None = None,
-    ) -> Payment:
-        """Create a local payment record from a completed Checkout Session.
-
-        Called by the webhook handler when checkout.session.completed fires.
-        """
-        # Check if we already have this payment (idempotent)
-        result = await db.execute(
-            select(Payment).where(
-                Payment.stripe_payment_intent_id == stripe_payment_intent_id
-            )
-        )
-        existing = result.scalar_one_or_none()
-        if existing:
-            logger.info(
-                f"Checkout payment already exists: {existing.id} "
-                f"(PI: {stripe_payment_intent_id})"
-            )
-            existing.status = PaymentStatus.SUCCEEDED
-            await db.flush()
-            return existing
-
-        # Store checkout metadata including session ID
-        payment_metadata = dict(metadata or {})
-        if checkout_session_id:
-            payment_metadata["checkout_session_id"] = checkout_session_id
-        if customer_email:
-            payment_metadata["customer_email"] = customer_email
-
-        payment = Payment(
-            stripe_payment_intent_id=stripe_payment_intent_id,
-            amount=amount_total,
-            currency=currency.lower(),
-            status=PaymentStatus.SUCCEEDED,
-            description=f"Checkout payment",
-            metadata_=payment_metadata,
-        )
-
-        db.add(payment)
-        await db.flush()
-        await db.refresh(payment)
-
-        logger.info(
-            f"Created payment from checkout: {payment.id} "
-            f"amount={amount_total} currency={currency}"
-        )
-        return payment
 
     # ── Helpers ───────────────────────────────────────
 
@@ -306,30 +176,14 @@ class PaymentService:
         return payment
 
     @staticmethod
-    def _map_stripe_status(stripe_status: str) -> PaymentStatus:
-        mapping = {
-            "requires_payment_method": PaymentStatus.PENDING,
-            "requires_confirmation": PaymentStatus.PENDING,
-            "requires_action": PaymentStatus.REQUIRES_ACTION,
-            "processing": PaymentStatus.PROCESSING,
-            "succeeded": PaymentStatus.SUCCEEDED,
-            "canceled": PaymentStatus.CANCELED,
-            "requires_capture": PaymentStatus.PROCESSING,
-        }
-        return mapping.get(stripe_status, PaymentStatus.FAILED)
-
-    @staticmethod
     def _to_response(payment: Payment) -> PaymentResponse:
         return PaymentResponse(
             id=payment.id,
-            stripe_payment_intent_id=payment.stripe_payment_intent_id,
             customer_id=payment.customer_id,
             amount=payment.amount,
             currency=payment.currency,
             status=payment.status.value,
             description=payment.description,
-            payment_method_id=payment.payment_method_id,
-            client_secret=payment.client_secret,
             metadata=payment.metadata_,
             amount_refunded=payment.amount_refunded,
             idempotency_key=payment.idempotency_key,

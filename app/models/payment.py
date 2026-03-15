@@ -1,5 +1,5 @@
 """
-Payment model — stores payment intent data synced with Stripe.
+Payment model — stores payment data for the Digital Wallet system.
 """
 
 import uuid
@@ -37,7 +37,6 @@ class Payment(Base):
     __tablename__ = "payments"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    stripe_payment_intent_id = Column(String(255), unique=True, nullable=True, index=True)
 
     # Relationship to customer
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True, index=True)
@@ -57,10 +56,6 @@ class Payment(Base):
         index=True,
     )
     description = Column(Text, nullable=True)
-    payment_method_id = Column(String(255), nullable=True)
-
-    # Stripe client secret for frontend confirmation
-    client_secret = Column(String(255), nullable=True)
 
     # Metadata for external systems (e.g., order_id, event_id)
     metadata_ = Column("metadata", JSONB, nullable=True, default=dict)

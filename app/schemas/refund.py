@@ -36,7 +36,6 @@ class RefundCreate(BaseModel):
 class RefundResponse(BaseModel):
     """Refund response body."""
     id: UUID
-    stripe_refund_id: Optional[str] = None
     payment_id: UUID
     amount: int
     reason: str

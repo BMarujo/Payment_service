@@ -31,7 +31,6 @@ class TestCustomerService:
     def sample_customer(self):
         return Customer(
             id=uuid.uuid4(),
-            stripe_customer_id="cus_test_123",
             email="test@example.com",
             name="Test User",
             phone="+1234567890",

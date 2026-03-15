@@ -1,5 +1,5 @@
 """
-Refund model — stores refund data synced with Stripe.
+Refund model — stores refund data for the Digital Wallet system.
 """
 
 import uuid
@@ -33,7 +33,6 @@ class Refund(Base):
     __tablename__ = "refunds"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    stripe_refund_id = Column(String(255), unique=True, nullable=True, index=True)
 
     # Relationship to payment
     payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=False, index=True)

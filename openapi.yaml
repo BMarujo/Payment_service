@@ -1,6 +1,1006 @@
+openapi: 3.1.0
+info:
+  title: Payment Service
+  description: 'Production-ready Digital Wallet payment API. Provides a complete payment processing API including checkouts,
+    refunds, customer management, and receipt generation.
+
+
+    ## Authentication
+
+    All API endpoints (except health checks and auth) require an `X-API-Key` header for authentication. Click the **Authorize**
+    button (🔒) above to enter your API key, and it will be included in all requests.
+
+
+    - **Admin key**: Set via `ADMIN_API_KEY` env var — used to manage tenant API keys
+
+    - **Tenant keys**: Created via `POST /api/v1/admin/api-keys` — used for payment operations
+
+
+    ## Idempotency
+
+    POST endpoints support the `Idempotency-Key` header to prevent duplicate operations.
+
+
+    ## Rate Limiting
+
+    API requests are rate-limited per API key. Each tenant key can have custom rate limits. Check the `X-RateLimit-*` response
+    headers for current limits.'
+  version: 1.0.0
+servers:
+- url: http://localhost:8000
+  description: Local development server
+paths:
+  /health:
+    get:
+      tags:
+      - Health
+      summary: Health check
+      description: Returns service health status. Used by container orchestrators.
+      operationId: health_check_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Health Check Health Get
+  /ready:
+    get:
+      tags:
+      - Health
+      summary: Readiness probe
+      description: Checks connectivity to PostgreSQL and Redis.
+      operationId: readiness_check_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/checkout/sessions:
+    post:
+      tags:
+      - Checkout
+      summary: Create a custom checkout session
+      description: 'Create a hosted checkout session. Returns a `checkout_url` — redirect the end-user''s browser to that
+        URL to collect their custom Digital Wallet authorization.
+
+
+        **This is the main integration point for client services.** The client only needs to call this endpoint, redirect
+        the user to the local UI, and wait for the success callback redirect.'
+      operationId: create_checkout_session_api_v1_checkout_sessions_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutSessionCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/checkout/sessions/{session_id}/authorize:
+    post:
+      tags:
+      - Checkout
+      summary: Authorize a checkout session via Password
+      operationId: authorize_checkout_session_api_v1_checkout_sessions__session_id__authorize_post
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutAuthorizeRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutAuthorizeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/checkout/sessions/{session_id}:
+    get:
+      tags:
+      - Checkout
+      summary: Get checkout session status
+      description: 'Check the status of a checkout session. Use this to verify payment completion after the user is redirected
+        back.
+
+
+        **Statuses**: `open` (waiting for payment), `complete` (paid), `expired` (timed out, ~24h).'
+      operationId: get_checkout_session_api_v1_checkout_sessions__session_id__get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments:
+    post:
+      tags:
+      - Payments
+      summary: Create a payment
+      description: Create a new payment via the Digital Wallet system. Supports idempotency via the `Idempotency-Key` header.
+      operationId: create_payment_api_v1_payments_post
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Payments
+      summary: List payments
+      description: Retrieve a paginated list of payments with optional filters.
+      operationId: list_payments_api_v1_payments_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Items per page
+          default: 20
+          title: Limit
+        description: Items per page
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of items to skip
+          default: 0
+          title: Offset
+        description: Number of items to skip
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by status
+          title: Status
+        description: Filter by status
+      - name: customer_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          description: Filter by customer ID
+          title: Customer Id
+        description: Filter by customer ID
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments/{payment_id}:
+    get:
+      tags:
+      - Payments
+      summary: Get payment details
+      description: Retrieve details of a specific payment by its ID.
+      operationId: get_payment_api_v1_payments__payment_id__get
+      parameters:
+      - name: payment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Payment Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Payments
+      summary: Cancel or refund a payment
+      description: 'Cancel or refund a payment depending on its current status:
+
+
+        - **Pending / processing / requires_action** → cancels the payment
+
+        - **Succeeded / partially_refunded** → automatically issues a full refund
+
+
+        The payment status is updated accordingly (`canceled` or `refunded`).'
+      operationId: cancel_or_refund_payment_api_v1_payments__payment_id__delete
+      parameters:
+      - name: payment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Payment Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments/{payment_id}/confirm:
+    put:
+      tags:
+      - Payments
+      summary: Confirm a payment
+      description: Confirm/capture a pending payment intent. Updates the existing payment status to 'succeeded' (or 'requires_action'
+        if further steps are needed).
+      operationId: confirm_payment_api_v1_payments__payment_id__confirm_put
+      parameters:
+      - name: payment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Payment Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/payments/{payment_id}/receipt:
+    get:
+      tags:
+      - Payments
+      summary: Download payment receipt
+      description: Generate and download a PDF receipt for a succeeded payment.
+      operationId: download_receipt_api_v1_payments__payment_id__receipt_get
+      parameters:
+      - name: payment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Payment Id
+      responses:
+        '200':
+          description: PDF receipt file
+          content:
+            application/json:
+              schema: {}
+            application/pdf: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/customers:
+    post:
+      tags:
+      - Customers
+      summary: Create a customer
+      description: Create a new customer in the system.
+      operationId: create_customer_api_v1_customers_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Customers
+      summary: List customers
+      description: Retrieve a paginated list of customers.
+      operationId: list_customers_api_v1_customers_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Items per page
+          default: 20
+          title: Limit
+        description: Items per page
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of items to skip
+          default: 0
+          title: Offset
+        description: Number of items to skip
+      - name: email
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter by email (partial match)
+          title: Email
+        description: Filter by email (partial match)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/customers/me/transactions:
+    get:
+      tags:
+      - Customers
+      summary: Get my transactions
+      description: Retrieve the payment history for the currently authenticated customer.
+      operationId: get_my_transactions_api_v1_customers_me_transactions_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Items per page
+          default: 20
+          title: Limit
+        description: Items per page
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of items to skip
+          default: 0
+          title: Offset
+        description: Number of items to skip
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/customers/{customer_id}:
+    get:
+      tags:
+      - Customers
+      summary: Get customer details
+      description: Retrieve details of a specific customer by ID.
+      operationId: get_customer_api_v1_customers__customer_id__get
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Customer Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Customers
+      summary: Update a customer
+      description: Update customer details. Only provided fields will be changed.
+      operationId: update_customer_api_v1_customers__customer_id__put
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Customer Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Customers
+      summary: Delete a customer
+      description: Soft-delete a customer.
+      operationId: delete_customer_api_v1_customers__customer_id__delete
+      parameters:
+      - name: customer_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Customer Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/refunds:
+    post:
+      tags:
+      - Refunds
+      summary: Create a refund
+      description: Create a refund for a succeeded payment. Supports partial refunds by specifying an amount less than the
+        original payment. Supports idempotency via the `Idempotency-Key` header.
+      operationId: create_refund_api_v1_refunds_post
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Refunds
+      summary: List refunds
+      description: Retrieve a paginated list of refunds with optional filters.
+      operationId: list_refunds_api_v1_refunds_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Items per page
+          default: 20
+          title: Limit
+        description: Items per page
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Number of items to skip
+          default: 0
+          title: Offset
+        description: Number of items to skip
+      - name: payment_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          description: Filter by payment ID
+          title: Payment Id
+        description: Filter by payment ID
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/refunds/{refund_id}:
+    get:
+      tags:
+      - Refunds
+      summary: Get refund details
+      description: Retrieve details of a specific refund by its ID.
+      operationId: get_refund_api_v1_refunds__refund_id__get
+      parameters:
+      - name: refund_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Refund Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/api-keys:
+    post:
+      tags:
+      - API Keys
+      summary: Create a new API key
+      description: 'Generate a new API key for a client/tenant. The raw key is returned **only in this response** — store
+        it securely. It cannot be retrieved again.
+
+
+        **Requires admin API key.**'
+      operationId: create_api_key_api_v1_admin_api_keys_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiKeyCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyCreatedResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - API Keys
+      summary: List API keys
+      description: Retrieve a paginated list of all API keys. **Requires admin API key.**
+      operationId: list_api_keys_api_v1_admin_api_keys_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Items per page
+          default: 20
+          title: Limit
+        description: Items per page
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          description: Items to skip
+          default: 0
+          title: Offset
+        description: Items to skip
+      - name: is_active
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          description: Filter by active status
+          title: Is Active
+        description: Filter by active status
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/api-keys/{key_id}:
+    get:
+      tags:
+      - API Keys
+      summary: Get API key details
+      description: Retrieve details of a specific API key. **Requires admin API key.**
+      operationId: get_api_key_api_v1_admin_api_keys__key_id__get
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Key Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - API Keys
+      summary: Update an API key
+      description: Update API key properties such as scopes, rate limits, or active status. **Requires admin API key.**
+      operationId: update_api_key_api_v1_admin_api_keys__key_id__put
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Key Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiKeyUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - API Keys
+      summary: Revoke an API key
+      description: Permanently revoke an API key. The key will immediately stop working. **Requires admin API key.**
+      operationId: revoke_api_key_api_v1_admin_api_keys__key_id__delete
+      parameters:
+      - name: key_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Key Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/register:
+    post:
+      tags:
+      - Authentication
+      summary: Register Customer
+      operationId: register_customer_api_v1_auth_register_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerRegister'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/login:
+    post:
+      tags:
+      - Authentication
+      summary: Login Customer
+      operationId: login_customer_api_v1_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerLogin'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /app/register:
+    get:
+      tags:
+      - Digital Wallet
+      summary: Get wallet registration page URL
+      description: Returns the URL for the Digital Wallet registration page. Redirect the user's browser there to create a
+        wallet account.
+      operationId: get_register_url_app_register_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /app/dashboard:
+    get:
+      tags:
+      - Digital Wallet
+      summary: Get wallet dashboard page URL
+      description: Returns the URL for the Digital Wallet dashboard page. Redirect the user's browser there to manage their
+        wallet.
+      operationId: get_dashboard_url_app_dashboard_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /app/login:
+    get:
+      tags:
+      - Digital Wallet
+      summary: Get wallet login page URL
+      description: Returns the URL for the Digital Wallet login page. Redirect existing users there to sign in.
+      operationId: get_login_url_app_login_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
 components:
   schemas:
     ApiKeyCreate:
+      properties:
+        client_name:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Client Name
+          description: Name of the client/tenant
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+          description: Description of what this key is used for
+        scopes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Scopes
+          description: 'List of allowed scopes. If empty/null, all scopes are allowed. Available scopes: payments:read, payments:write,
+            refunds:read, refunds:write, customers:read, customers:write'
+        rate_limit_requests:
+          anyOf:
+          - type: integer
+            maximum: 10000.0
+            minimum: 1.0
+          - type: 'null'
+          title: Rate Limit Requests
+          description: Custom rate limit (requests per window). Uses global default if not set.
+        rate_limit_window_seconds:
+          anyOf:
+          - type: integer
+            maximum: 3600.0
+            minimum: 1.0
+          - type: 'null'
+          title: Rate Limit Window Seconds
+          description: Custom rate limit window in seconds. Uses global default if not set.
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+          description: Expiration timestamp (UTC). Null means the key never expires.
+      type: object
+      required:
+      - client_name
+      title: ApiKeyCreate
       description: Request body to create a new API key.
       examples:
       - client_name: Ticket Service
@@ -11,98 +1011,34 @@ components:
         - payments:read
         - payments:write
         - customers:read
-      properties:
-        client_name:
-          description: Name of the client/tenant
-          maxLength: 255
-          minLength: 1
-          title: Client Name
-          type: string
-        description:
-          anyOf:
-          - maxLength: 500
-            type: string
-          - type: 'null'
-          description: Description of what this key is used for
-          title: Description
-        expires_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          description: Expiration timestamp (UTC). Null means the key never expires.
-          title: Expires At
-        rate_limit_requests:
-          anyOf:
-          - maximum: 10000.0
-            minimum: 1.0
-            type: integer
-          - type: 'null'
-          description: Custom rate limit (requests per window). Uses global default
-            if not set.
-          title: Rate Limit Requests
-        rate_limit_window_seconds:
-          anyOf:
-          - maximum: 3600.0
-            minimum: 1.0
-            type: integer
-          - type: 'null'
-          description: Custom rate limit window in seconds. Uses global default if
-            not set.
-          title: Rate Limit Window Seconds
-        scopes:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          description: 'List of allowed scopes. If empty/null, all scopes are allowed.
-            Available scopes: payments:read, payments:write, refunds:read, refunds:write,
-            customers:read, customers:write'
-          title: Scopes
-      required:
-      - client_name
-      title: ApiKeyCreate
-      type: object
     ApiKeyCreatedResponse:
-      description: "Response returned only at creation time.\nContains the raw API\
-        \ key \u2014 this is the ONLY time the full key is shown."
       properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        key_prefix:
+          type: string
+          title: Key Prefix
+          description: First characters of the key for identification
         client_name:
+          type: string
           title: Client Name
-          type: string
-        created_at:
-          format: date-time
-          title: Created At
-          type: string
         description:
           anyOf:
           - type: string
           - type: 'null'
           title: Description
-        expires_at:
+        scopes:
           anyOf:
-          - format: date-time
-            type: string
+          - items:
+              type: string
+            type: array
           - type: 'null'
-          title: Expires At
-        id:
-          format: uuid
-          title: Id
-          type: string
+          title: Scopes
         is_active:
-          title: Is Active
           type: boolean
-        key_prefix:
-          description: First characters of the key for identification
-          title: Key Prefix
-          type: string
-        last_used_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          title: Last Used At
+          title: Is Active
         rate_limit_requests:
           anyOf:
           - type: integer
@@ -113,22 +1049,31 @@ components:
           - type: integer
           - type: 'null'
           title: Rate Limit Window Seconds
-        raw_key:
-          description: "The full API key. Store this securely \u2014 it cannot be\
-            \ retrieved again."
-          title: Raw Key
-          type: string
-        scopes:
+        last_used_at:
           anyOf:
-          - items:
-              type: string
-            type: array
+          - type: string
+            format: date-time
           - type: 'null'
-          title: Scopes
+          title: Last Used At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
         updated_at:
+          type: string
           format: date-time
           title: Updated At
+        raw_key:
           type: string
+          title: Raw Key
+          description: The full API key. Store this securely — it cannot be retrieved again.
+      type: object
       required:
       - id
       - key_prefix
@@ -138,27 +1083,29 @@ components:
       - updated_at
       - raw_key
       title: ApiKeyCreatedResponse
-      type: object
+      description: 'Response returned only at creation time.
+
+        Contains the raw API key — this is the ONLY time the full key is shown.'
     ApiKeyListResponse:
-      description: Paginated list of API keys.
       properties:
-        has_more:
-          title: Has More
-          type: boolean
         items:
           items:
             $ref: '#/components/schemas/ApiKeyResponse'
-          title: Items
           type: array
-        limit:
-          title: Limit
-          type: integer
-        offset:
-          title: Offset
-          type: integer
+          title: Items
         total:
-          title: Total
           type: integer
+          title: Total
+        limit:
+          type: integer
+          title: Limit
+        offset:
+          type: integer
+          title: Offset
+        has_more:
+          type: boolean
+          title: Has More
+      type: object
       required:
       - items
       - total
@@ -166,45 +1113,35 @@ components:
       - offset
       - has_more
       title: ApiKeyListResponse
-      type: object
+      description: Paginated list of API keys.
     ApiKeyResponse:
-      description: API key details (without the raw key).
       properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        key_prefix:
+          type: string
+          title: Key Prefix
+          description: First characters of the key for identification
         client_name:
+          type: string
           title: Client Name
-          type: string
-        created_at:
-          format: date-time
-          title: Created At
-          type: string
         description:
           anyOf:
           - type: string
           - type: 'null'
           title: Description
-        expires_at:
+        scopes:
           anyOf:
-          - format: date-time
-            type: string
+          - items:
+              type: string
+            type: array
           - type: 'null'
-          title: Expires At
-        id:
-          format: uuid
-          title: Id
-          type: string
+          title: Scopes
         is_active:
-          title: Is Active
           type: boolean
-        key_prefix:
-          description: First characters of the key for identification
-          title: Key Prefix
-          type: string
-        last_used_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          title: Last Used At
+          title: Is Active
         rate_limit_requests:
           anyOf:
           - type: integer
@@ -215,17 +1152,27 @@ components:
           - type: integer
           - type: 'null'
           title: Rate Limit Window Seconds
-        scopes:
+        last_used_at:
           anyOf:
-          - items:
-              type: string
-            type: array
+          - type: string
+            format: date-time
           - type: 'null'
-          title: Scopes
+          title: Last Used At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
         updated_at:
+          type: string
           format: date-time
           title: Updated At
-          type: string
+      type: object
       required:
       - id
       - key_prefix
@@ -234,42 +1181,15 @@ components:
       - created_at
       - updated_at
       title: ApiKeyResponse
-      type: object
+      description: API key details (without the raw key).
     ApiKeyUpdate:
-      description: Request body to update an API key.
       properties:
         description:
           anyOf:
-          - maxLength: 500
-            type: string
+          - type: string
+            maxLength: 500
           - type: 'null'
           title: Description
-        expires_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          title: Expires At
-        is_active:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          description: Set to false to revoke the key
-          title: Is Active
-        rate_limit_requests:
-          anyOf:
-          - maximum: 10000.0
-            minimum: 1.0
-            type: integer
-          - type: 'null'
-          title: Rate Limit Requests
-        rate_limit_window_seconds:
-          anyOf:
-          - maximum: 3600.0
-            minimum: 1.0
-            type: integer
-          - type: 'null'
-          title: Rate Limit Window Seconds
         scopes:
           anyOf:
           - items:
@@ -277,36 +1197,143 @@ components:
             type: array
           - type: 'null'
           title: Scopes
-      title: ApiKeyUpdate
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Active
+          description: Set to false to revoke the key
+        rate_limit_requests:
+          anyOf:
+          - type: integer
+            maximum: 10000.0
+            minimum: 1.0
+          - type: 'null'
+          title: Rate Limit Requests
+        rate_limit_window_seconds:
+          anyOf:
+          - type: integer
+            maximum: 3600.0
+            minimum: 1.0
+          - type: 'null'
+          title: Rate Limit Window Seconds
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
       type: object
+      title: ApiKeyUpdate
+      description: Request body to update an API key.
+    CheckoutAuthorizeRequest:
+      properties:
+        password:
+          type: string
+          title: Password
+          description: Customer's wallet password to authorize the transaction
+      type: object
+      required:
+      - password
+      title: CheckoutAuthorizeRequest
+    CheckoutAuthorizeResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+          description: Authorization status (e.g. 'succeeded')
+        payment_id:
+          type: string
+          format: uuid
+          title: Payment Id
+          description: ID of the completed internal payment
+        success_url:
+          type: string
+          title: Success Url
+          description: URL to redirect the customer to upon success
+      type: object
+      required:
+      - status
+      - payment_id
+      - success_url
+      title: CheckoutAuthorizeResponse
     CheckoutLineItem:
-      description: A single line item in the checkout.
       properties:
         name:
-          description: Product/item name shown on the checkout page
+          type: string
           maxLength: 200
           title: Name
-          type: string
-        price:
-          description: Unit price in smallest currency unit (e.g., cents)
-          exclusiveMinimum: 0.0
-          title: Price
-          type: integer
+          description: Product/item name shown on the checkout page
         quantity:
-          default: 1
-          description: Number of units
+          type: integer
           minimum: 1.0
           title: Quantity
+          description: Number of units
+          default: 1
+        price:
           type: integer
+          exclusiveMinimum: 0.0
+          title: Price
+          description: Unit price in smallest currency unit (e.g., cents)
+      type: object
       required:
       - name
       - price
       title: CheckoutLineItem
-      type: object
+      description: A single line item in the checkout.
     CheckoutSessionCreate:
-      description: "Request body to create a hosted checkout session.\n\nThe client\
-        \ only needs to send the payment details and redirect URLs.\nThe response\
-        \ includes a checkout_url \u2014 redirect the end-user there."
+      properties:
+        line_items:
+          items:
+            $ref: '#/components/schemas/CheckoutLineItem'
+          type: array
+          minItems: 1
+          title: Line Items
+          description: Items being purchased (displayed on the checkout page)
+        currency:
+          type: string
+          maxLength: 3
+          minLength: 3
+          title: Currency
+          description: ISO 4217 currency code
+          default: usd
+        success_url:
+          type: string
+          title: Success Url
+          description: URL to redirect the customer after successful payment.
+        cancel_url:
+          type: string
+          title: Cancel Url
+          description: URL to redirect the customer if they cancel the checkout.
+        customer_email:
+          type: string
+          title: Customer Email
+          description: Email of the customer. If they don't exist in the Payment Service, a new identity will be created automatically.
+        customer_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Customer Name
+          description: Name of the customer (used if creating a new identity)
+        metadata:
+          anyOf:
+          - type: object
+          - type: 'null'
+          title: Metadata
+          description: Arbitrary key-value metadata passed to the payment
+      type: object
+      required:
+      - line_items
+      - success_url
+      - cancel_url
+      - customer_email
+      title: CheckoutSessionCreate
+      description: 'Request body to create a hosted checkout session.
+
+
+        The client only needs to send the payment details and redirect URLs.
+
+        The response includes a checkout_url — redirect the end-user there.'
       examples:
       - cancel_url: https://mytickets.com/order/123/cancel
         currency: usd
@@ -320,126 +1347,70 @@ components:
           event_id: evt_456
           order_id: order_123
         success_url: https://mytickets.com/order/123/success
-      properties:
-        cancel_url:
-          description: URL to redirect the customer if they cancel the checkout.
-          title: Cancel Url
-          type: string
-        currency:
-          default: usd
-          description: ISO 4217 currency code
-          maxLength: 3
-          minLength: 3
-          title: Currency
-          type: string
-        customer_email:
-          description: Email of the customer. If they don't exist in the Payment Service,
-            a new identity will be created automatically.
-          title: Customer Email
-          type: string
-        customer_name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Name of the customer (used if creating a new identity)
-          title: Customer Name
-        line_items:
-          description: Items being purchased (displayed on the checkout page)
-          items:
-            $ref: '#/components/schemas/CheckoutLineItem'
-          minItems: 1
-          title: Line Items
-          type: array
-        metadata:
-          anyOf:
-          - type: object
-          - type: 'null'
-          description: Arbitrary key-value metadata passed to the payment
-          title: Metadata
-        success_url:
-          description: URL to redirect the customer after successful payment. Stripe
-            appends `?session_id={CHECKOUT_SESSION_ID}` automatically.
-          title: Success Url
-          type: string
-      required:
-      - line_items
-      - success_url
-      - cancel_url
-      - customer_email
-      title: CheckoutSessionCreate
-      type: object
     CheckoutSessionResponse:
-      description: 'Response after creating a checkout session.
-
-
-        Redirect the end-user''s browser to `checkout_url` to complete payment.'
       properties:
-        amount_total:
-          description: Total amount in smallest currency unit
-          title: Amount Total
-          type: integer
-        cancel_url:
-          description: URL to redirect on cancel
-          title: Cancel Url
+        session_id:
           type: string
-        checkout_url:
-          description: URL to redirect the customer to for payment
-          title: Checkout Url
-          type: string
-        currency:
-          description: ISO 4217 currency code
-          title: Currency
-          type: string
-        customer_email:
-          description: Pre-fill email
-          title: Customer Email
-          type: string
-        customer_name:
-          description: Pre-fill name on card
-          title: Customer Name
-          type: string
-        expires_at:
-          description: When this checkout session expires
-          format: date-time
-          title: Expires At
-          type: string
+          title: Session Id
+          description: Checkout Session ID
         line_items:
           anyOf:
           - items:
               $ref: '#/components/schemas/CheckoutLineItem'
             type: array
           - type: 'null'
-          description: Items to display in the UI
           title: Line Items
+          description: Items to display in the UI
+        checkout_url:
+          type: string
+          title: Checkout Url
+          description: URL to redirect the customer to for payment
+        status:
+          type: string
+          title: Status
+          description: 'Session status: open, complete, or expired'
+        success_url:
+          type: string
+          title: Success Url
+          description: URL to redirect on success
+        cancel_url:
+          type: string
+          title: Cancel Url
+          description: URL to redirect on cancel
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+          description: When this checkout session expires
+        payment_status:
+          type: string
+          title: Payment Status
+          description: 'Payment status: unpaid, paid, or no_payment_required'
+        amount_total:
+          type: integer
+          title: Amount Total
+          description: Total amount in smallest currency unit
+        currency:
+          type: string
+          title: Currency
+          description: ISO 4217 currency code
+        customer_name:
+          type: string
+          title: Customer Name
+          description: Customer name
+        customer_email:
+          type: string
+          title: Customer Email
+          description: Customer email
         metadata:
           anyOf:
           - type: object
           - type: 'null'
-          description: Metadata
           title: Metadata
-        payment_status:
-          description: 'Payment status: unpaid, paid, or no_payment_required'
-          title: Payment Status
-          type: string
-        publishable_key:
-          description: Stripe Publishable Key for frontend initialization
-          title: Publishable Key
-          type: string
-        session_id:
-          description: Local Checkout Session ID
-          title: Session Id
-          type: string
-        status:
-          description: 'Session status: open, complete, or expired'
-          title: Status
-          type: string
-        success_url:
-          description: URL to redirect on success
-          title: Success Url
-          type: string
+          description: Metadata
+      type: object
       required:
       - session_id
-      - publishable_key
       - checkout_url
       - status
       - success_url
@@ -451,8 +1422,41 @@ components:
       - customer_name
       - customer_email
       title: CheckoutSessionResponse
-      type: object
+      description: 'Response after creating a checkout session.
+
+
+        Redirect the end-user''s browser to `checkout_url` to complete payment.'
     CustomerCreate:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+          description: Customer email address
+        name:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Name
+          description: Customer full name
+        phone:
+          anyOf:
+          - type: string
+            maxLength: 50
+          - type: 'null'
+          title: Phone
+          description: Customer phone number
+        metadata:
+          anyOf:
+          - type: object
+          - type: 'null'
+          title: Metadata
+          description: Arbitrary key-value metadata
+      type: object
+      required:
+      - email
+      title: CustomerCreate
       description: Request body to create a customer.
       examples:
       - email: john.doe@example.com
@@ -460,56 +1464,26 @@ components:
           external_id: user_123
         name: John Doe
         phone: '+1234567890'
-      properties:
-        email:
-          description: Customer email address
-          format: email
-          title: Email
-          type: string
-        metadata:
-          anyOf:
-          - type: object
-          - type: 'null'
-          description: Arbitrary key-value metadata
-          title: Metadata
-        name:
-          anyOf:
-          - maxLength: 255
-            type: string
-          - type: 'null'
-          description: Customer full name
-          title: Name
-        phone:
-          anyOf:
-          - maxLength: 50
-            type: string
-          - type: 'null'
-          description: Customer phone number
-          title: Phone
-      required:
-      - email
-      title: CustomerCreate
-      type: object
     CustomerListResponse:
-      description: Paginated list of customers.
       properties:
-        has_more:
-          title: Has More
-          type: boolean
         items:
           items:
             $ref: '#/components/schemas/CustomerResponse'
-          title: Items
           type: array
-        limit:
-          title: Limit
-          type: integer
-        offset:
-          title: Offset
-          type: integer
+          title: Items
         total:
-          title: Total
           type: integer
+          title: Total
+        limit:
+          type: integer
+          title: Limit
+        offset:
+          type: integer
+          title: Offset
+        has_more:
+          type: boolean
+          title: Has More
+      type: object
       required:
       - items
       - total
@@ -517,30 +1491,54 @@ components:
       - offset
       - has_more
       title: CustomerListResponse
-      type: object
-    CustomerResponse:
-      description: Customer response body.
+      description: Paginated list of customers.
+    CustomerLogin:
       properties:
-        created_at:
-          format: date-time
-          title: Created At
-          type: string
         email:
-          title: Email
           type: string
+          format: email
+          title: Email
+          description: Customer email address
+        password:
+          type: string
+          title: Password
+          description: Account password
+      type: object
+      required:
+      - email
+      - password
+      title: CustomerLogin
+    CustomerRegister:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+          description: Customer email address
+        name:
+          type: string
+          title: Name
+          description: Customer full name
+        password:
+          type: string
+          minLength: 8
+          title: Password
+          description: Secure account password
+      type: object
+      required:
+      - email
+      - name
+      - password
+      title: CustomerRegister
+    CustomerResponse:
+      properties:
         id:
+          type: string
           format: uuid
           title: Id
+        email:
           type: string
-        is_active:
-          default: true
-          title: Is Active
-          type: boolean
-        metadata:
-          anyOf:
-          - type: object
-          - type: 'null'
-          title: Metadata
+          title: Email
         name:
           anyOf:
           - type: string
@@ -551,141 +1549,138 @@ components:
           - type: string
           - type: 'null'
           title: Phone
-        stripe_customer_id:
+        metadata:
           anyOf:
-          - type: string
+          - type: object
           - type: 'null'
-          title: Stripe Customer Id
+          title: Metadata
+        is_active:
+          type: boolean
+          title: Is Active
+          default: true
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
         updated_at:
+          type: string
           format: date-time
           title: Updated At
-          type: string
+      type: object
       required:
       - id
       - email
       - created_at
       - updated_at
       title: CustomerResponse
-      type: object
+      description: Customer response body.
     CustomerUpdate:
-      description: Request body to update a customer.
       properties:
         email:
           anyOf:
-          - format: email
-            type: string
+          - type: string
+            format: email
           - type: 'null'
-          description: Customer email address
           title: Email
+          description: Customer email address
+        name:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Name
+          description: Customer full name
+        phone:
+          anyOf:
+          - type: string
+            maxLength: 50
+          - type: 'null'
+          title: Phone
+          description: Customer phone number
         metadata:
           anyOf:
           - type: object
           - type: 'null'
-          description: Arbitrary key-value metadata
           title: Metadata
-        name:
-          anyOf:
-          - maxLength: 255
-            type: string
-          - type: 'null'
-          description: Customer full name
-          title: Name
-        phone:
-          anyOf:
-          - maxLength: 50
-            type: string
-          - type: 'null'
-          description: Customer phone number
-          title: Phone
-      title: CustomerUpdate
+          description: Arbitrary key-value metadata
       type: object
+      title: CustomerUpdate
+      description: Request body to update a customer.
     HTTPValidationError:
       properties:
         detail:
           items:
             $ref: '#/components/schemas/ValidationError'
-          title: Detail
           type: array
-      title: HTTPValidationError
+          title: Detail
       type: object
+      title: HTTPValidationError
     PaymentCreate:
-      description: Request body to create a new payment.
-      examples:
-      - amount: 5000
-        confirm: true
-        currency: usd
-        description: Event ticket purchase
-        metadata:
-          event_id: evt_123
-          ticket_type: VIP
-        payment_method_id: pm_card_visa
       properties:
         amount:
-          description: Amount in smallest currency unit (e.g., cents)
+          type: integer
           exclusiveMinimum: 0.0
           title: Amount
-          type: integer
-        confirm:
-          default: true
-          description: Whether to immediately confirm the payment
-          title: Confirm
-          type: boolean
+          description: Amount in smallest currency unit (e.g., cents)
         currency:
-          default: usd
-          description: ISO 4217 currency code
+          type: string
           maxLength: 3
           minLength: 3
           title: Currency
-          type: string
+          description: ISO 4217 currency code
+          default: usd
         customer_id:
-          description: ID of the customer in our system
+          type: string
           format: uuid
           title: Customer Id
-          type: string
+          description: ID of the customer in our system
         description:
           anyOf:
-          - maxLength: 500
-            type: string
+          - type: string
+            maxLength: 500
           - type: 'null'
-          description: Payment description
           title: Description
+          description: Payment description
         metadata:
           anyOf:
           - type: object
           - type: 'null'
-          description: Arbitrary key-value metadata
           title: Metadata
-        payment_method_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Stripe payment method ID (e.g., pm_card_visa)
-          title: Payment Method Id
+          description: Arbitrary key-value metadata
+      type: object
       required:
       - amount
       - customer_id
       title: PaymentCreate
-      type: object
+      description: Request body to create a new payment.
+      examples:
+      - amount: 5000
+        currency: usd
+        customer_id: 550e8400-e29b-41d4-a716-446655440000
+        description: Event ticket purchase
+        metadata:
+          event_id: evt_123
+          ticket_type: VIP
     PaymentListResponse:
-      description: Paginated list of payments.
       properties:
-        has_more:
-          title: Has More
-          type: boolean
         items:
           items:
             $ref: '#/components/schemas/PaymentResponse'
-          title: Items
           type: array
-        limit:
-          title: Limit
-          type: integer
-        offset:
-          title: Offset
-          type: integer
+          title: Items
         total:
-          title: Total
           type: integer
+          title: Total
+        limit:
+          type: integer
+          title: Limit
+        offset:
+          type: integer
+          title: Offset
+        has_more:
+          type: boolean
+          title: Has More
+      type: object
       required:
       - items
       - total
@@ -693,71 +1688,56 @@ components:
       - offset
       - has_more
       title: PaymentListResponse
-      type: object
+      description: Paginated list of payments.
     PaymentResponse:
-      description: Payment response body.
       properties:
-        amount:
-          title: Amount
-          type: integer
-        amount_refunded:
-          default: 0
-          title: Amount Refunded
-          type: integer
-        client_secret:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Client Secret
-        created_at:
-          format: date-time
-          title: Created At
+        id:
           type: string
-        currency:
-          title: Currency
-          type: string
+          format: uuid
+          title: Id
         customer_id:
           anyOf:
-          - format: uuid
-            type: string
+          - type: string
+            format: uuid
           - type: 'null'
           title: Customer Id
+        amount:
+          type: integer
+          title: Amount
+        currency:
+          type: string
+          title: Currency
+        status:
+          type: string
+          title: Status
         description:
           anyOf:
           - type: string
           - type: 'null'
           title: Description
-        id:
-          format: uuid
-          title: Id
-          type: string
-        idempotency_key:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Idempotency Key
         metadata:
           anyOf:
           - type: object
           - type: 'null'
           title: Metadata
-        payment_method_id:
+        amount_refunded:
+          type: integer
+          title: Amount Refunded
+          default: 0
+        idempotency_key:
           anyOf:
           - type: string
           - type: 'null'
-          title: Payment Method Id
-        status:
-          title: Status
+          title: Idempotency Key
+        created_at:
           type: string
-        stripe_payment_intent_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Stripe Payment Intent Id
+          format: date-time
+          title: Created At
         updated_at:
+          type: string
           format: date-time
           title: Updated At
-          type: string
+      type: object
       required:
       - id
       - amount
@@ -766,7 +1746,132 @@ components:
       - created_at
       - updated_at
       title: PaymentResponse
+      description: Payment response body.
+    RefundCreate:
+      properties:
+        payment_id:
+          type: string
+          format: uuid
+          title: Payment Id
+          description: ID of the payment to refund
+        amount:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Amount
+          description: 'Refund amount in cents (default: full refund)'
+        reason:
+          type: string
+          title: Reason
+          description: 'Refund reason: duplicate, fraudulent, requested_by_customer, other'
+          default: requested_by_customer
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+          description: Additional details
       type: object
+      required:
+      - payment_id
+      title: RefundCreate
+      description: Request body to create a refund.
+      examples:
+      - amount: 2500
+        description: Customer changed mind about VIP upgrade
+        payment_id: 550e8400-e29b-41d4-a716-446655440000
+        reason: requested_by_customer
+    RefundListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RefundResponse'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        limit:
+          type: integer
+          title: Limit
+        offset:
+          type: integer
+          title: Offset
+        has_more:
+          type: boolean
+          title: Has More
+      type: object
+      required:
+      - items
+      - total
+      - limit
+      - offset
+      - has_more
+      title: RefundListResponse
+      description: Paginated list of refunds.
+    RefundResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        payment_id:
+          type: string
+          format: uuid
+          title: Payment Id
+        amount:
+          type: integer
+          title: Amount
+        reason:
+          type: string
+          title: Reason
+        status:
+          type: string
+          title: Status
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        idempotency_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency Key
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - payment_id
+      - amount
+      - reason
+      - status
+      - created_at
+      - updated_at
+      title: RefundResponse
+      description: Refund response body.
+    TokenResponse:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        token_type:
+          type: string
+          title: Token Type
+      type: object
+      required:
+      - access_token
+      - token_type
+      title: TokenResponse
     ValidationError:
       properties:
         loc:
@@ -774,768 +1879,41 @@ components:
             anyOf:
             - type: string
             - type: integer
-          title: Location
           type: array
+          title: Location
         msg:
+          type: string
           title: Message
-          type: string
         type:
-          title: Error Type
           type: string
+          title: Error Type
+      type: object
       required:
       - loc
       - msg
       - type
       title: ValidationError
-      type: object
   securitySchemes:
     ApiKeyAuth:
-      description: Enter your API key. Use the **admin key** (from ADMIN_API_KEY env
-        var) for `/api/v1/admin/*` endpoints, or a **tenant key** (ps_live_...) for
-        payment/refund/customer operations.
+      type: apiKey
       in: header
       name: X-API-Key
-      type: apiKey
-info:
-  description: "Production-ready payment microservice with Stripe integration. Provides\
-    \ a complete payment processing API including payments, refunds, customer management,\
-    \ receipt generation, and webhook handling.\n\n## Authentication\nAll API endpoints\
-    \ (except health checks and webhooks) require an `X-API-Key` header for authentication.\
-    \ Click the **Authorize** button (\U0001F512) above to enter your API key, and\
-    \ it will be included in all requests.\n\n- **Admin key**: Set via `ADMIN_API_KEY`\
-    \ env var \u2014 used to manage tenant API keys\n- **Tenant keys**: Created via\
-    \ `POST /api/v1/admin/api-keys` \u2014 used for payment operations\n\n## Idempotency\n\
-    POST endpoints support the `Idempotency-Key` header to prevent duplicate operations.\n\
-    \n## Rate Limiting\nAPI requests are rate-limited per API key. Each tenant key\
-    \ can have custom rate limits. Check the `X-RateLimit-*` response headers for\
-    \ current limits."
-  title: Payment Service
-  version: 1.0.0
-openapi: 3.1.0
-paths:
-  /api/v1/admin/api-keys:
-    get:
-      description: Retrieve a paginated list of all API keys. **Requires admin API
-        key.**
-      operationId: list_api_keys_api_v1_admin_api_keys_get
-      parameters:
-      - description: Items per page
-        in: query
-        name: limit
-        required: false
-        schema:
-          default: 20
-          description: Items per page
-          maximum: 100
-          minimum: 1
-          title: Limit
-          type: integer
-      - description: Items to skip
-        in: query
-        name: offset
-        required: false
-        schema:
-          default: 0
-          description: Items to skip
-          minimum: 0
-          title: Offset
-          type: integer
-      - description: Filter by active status
-        in: query
-        name: is_active
-        required: false
-        schema:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          description: Filter by active status
-          title: Is Active
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiKeyListResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: List API keys
-      tags:
-      - API Keys
-    post:
-      description: "Generate a new API key for a client/tenant. The raw key is returned\
-        \ **only in this response** \u2014 store it securely. It cannot be retrieved\
-        \ again.\n\n**Requires admin API key.**"
-      operationId: create_api_key_api_v1_admin_api_keys_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ApiKeyCreate'
-        required: true
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiKeyCreatedResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Create a new API key
-      tags:
-      - API Keys
-  /api/v1/admin/api-keys/{key_id}:
-    delete:
-      description: Permanently revoke an API key. The key will immediately stop working.
-        **Requires admin API key.**
-      operationId: revoke_api_key_api_v1_admin_api_keys__key_id__delete
-      parameters:
-      - in: path
-        name: key_id
-        required: true
-        schema:
-          format: uuid
-          title: Key Id
-          type: string
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Revoke an API key
-      tags:
-      - API Keys
-    get:
-      description: Retrieve details of a specific API key. **Requires admin API key.**
-      operationId: get_api_key_api_v1_admin_api_keys__key_id__get
-      parameters:
-      - in: path
-        name: key_id
-        required: true
-        schema:
-          format: uuid
-          title: Key Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiKeyResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Get API key details
-      tags:
-      - API Keys
-    put:
-      description: Update API key properties such as scopes, rate limits, or active
-        status. **Requires admin API key.**
-      operationId: update_api_key_api_v1_admin_api_keys__key_id__put
-      parameters:
-      - in: path
-        name: key_id
-        required: true
-        schema:
-          format: uuid
-          title: Key Id
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ApiKeyUpdate'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiKeyResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Update an API key
-      tags:
-      - API Keys
-  /api/v1/checkout/sessions:
-    post:
-      description: "Create a hosted checkout session. Returns a `checkout_url` \u2014\
-        \ redirect the end-user's browser to that URL to collect payment.\n\n**This\
-        \ is the main integration point for client services.** The client only needs\
-        \ to call this endpoint, redirect the user, and wait for the success redirect."
-      operationId: create_checkout_session_api_v1_checkout_sessions_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CheckoutSessionCreate'
-        required: true
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CheckoutSessionResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Create a custom checkout session
-      tags:
-      - Checkout
-  /api/v1/checkout/sessions/{session_id}:
-    get:
-      description: 'Check the status of a checkout session. Use this to verify payment
-        completion after the user is redirected back.
-
-
-        **Statuses**: `open` (waiting for payment), `complete` (paid), `expired` (timed
-        out, ~24h).'
-      operationId: get_checkout_session_api_v1_checkout_sessions__session_id__get
-      parameters:
-      - in: path
-        name: session_id
-        required: true
-        schema:
-          format: uuid
-          title: Session Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CheckoutSessionResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Get checkout session status
-      tags:
-      - Checkout
-  /api/v1/checkout/sessions/{session_id}/pay:
-    post:
-      description: Creates an internal PaymentIntent and returns the client_secret.
-      operationId: process_checkout_payment_api_v1_checkout_sessions__session_id__pay_post
-      parameters:
-      - in: path
-        name: session_id
-        required: true
-        schema:
-          format: uuid
-          title: Session Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Process custom checkout payment
-      tags:
-      - Checkout
-  /api/v1/customers:
-    get:
-      description: Retrieve a paginated list of customers.
-      operationId: list_customers_api_v1_customers_get
-      parameters:
-      - description: Items per page
-        in: query
-        name: limit
-        required: false
-        schema:
-          default: 20
-          description: Items per page
-          maximum: 100
-          minimum: 1
-          title: Limit
-          type: integer
-      - description: Number of items to skip
-        in: query
-        name: offset
-        required: false
-        schema:
-          default: 0
-          description: Number of items to skip
-          minimum: 0
-          title: Offset
-          type: integer
-      - description: Filter by email (partial match)
-        in: query
-        name: email
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Filter by email (partial match)
-          title: Email
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomerListResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: List customers
-      tags:
-      - Customers
-    post:
-      description: Create a new customer in the system and Stripe.
-      operationId: create_customer_api_v1_customers_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CustomerCreate'
-        required: true
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomerResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Create a customer
-      tags:
-      - Customers
-  /api/v1/customers/{customer_id}:
-    delete:
-      description: Soft-delete a customer from the system and Stripe.
-      operationId: delete_customer_api_v1_customers__customer_id__delete
-      parameters:
-      - in: path
-        name: customer_id
-        required: true
-        schema:
-          format: uuid
-          title: Customer Id
-          type: string
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Delete a customer
-      tags:
-      - Customers
-    get:
-      description: Retrieve details of a specific customer by ID.
-      operationId: get_customer_api_v1_customers__customer_id__get
-      parameters:
-      - in: path
-        name: customer_id
-        required: true
-        schema:
-          format: uuid
-          title: Customer Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomerResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Get customer details
-      tags:
-      - Customers
-    put:
-      description: Update customer details. Only provided fields will be changed.
-      operationId: update_customer_api_v1_customers__customer_id__put
-      parameters:
-      - in: path
-        name: customer_id
-        required: true
-        schema:
-          format: uuid
-          title: Customer Id
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CustomerUpdate'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomerResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Update a customer
-      tags:
-      - Customers
-  /api/v1/payments:
-    get:
-      description: Retrieve a paginated list of payments with optional filters.
-      operationId: list_payments_api_v1_payments_get
-      parameters:
-      - description: Items per page
-        in: query
-        name: limit
-        required: false
-        schema:
-          default: 20
-          description: Items per page
-          maximum: 100
-          minimum: 1
-          title: Limit
-          type: integer
-      - description: Number of items to skip
-        in: query
-        name: offset
-        required: false
-        schema:
-          default: 0
-          description: Number of items to skip
-          minimum: 0
-          title: Offset
-          type: integer
-      - description: Filter by status
-        in: query
-        name: status
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Filter by status
-          title: Status
-      - description: Filter by customer ID
-        in: query
-        name: customer_id
-        required: false
-        schema:
-          anyOf:
-          - format: uuid
-            type: string
-          - type: 'null'
-          description: Filter by customer ID
-          title: Customer Id
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaymentListResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: List payments
-      tags:
-      - Payments
-    post:
-      description: Create a new payment intent via Stripe. Use Stripe test payment
-        methods like `pm_card_visa` for testing. Supports idempotency via the `Idempotency-Key`
-        header.
-      operationId: create_payment_api_v1_payments_post
-      parameters:
-      - in: header
-        name: Idempotency-Key
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Idempotency-Key
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PaymentCreate'
-        required: true
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaymentResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Create a payment
-      tags:
-      - Payments
-  /api/v1/payments/{payment_id}:
-    delete:
-      description: "Cancel or refund a payment depending on its current status:\n\n\
-        - **Pending / processing / requires_action** \u2192 cancels the payment via\
-        \ Stripe\n- **Succeeded** \u2192 automatically issues a full refund via Stripe\n\
-        \nThe payment status is updated accordingly (`canceled` or `refunded`)."
-      operationId: cancel_or_refund_payment_api_v1_payments__payment_id__delete
-      parameters:
-      - in: path
-        name: payment_id
-        required: true
-        schema:
-          format: uuid
-          title: Payment Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaymentResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Cancel or refund a payment
-      tags:
-      - Payments
-    get:
-      description: Retrieve details of a specific payment by its ID.
-      operationId: get_payment_api_v1_payments__payment_id__get
-      parameters:
-      - in: path
-        name: payment_id
-        required: true
-        schema:
-          format: uuid
-          title: Payment Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaymentResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Get payment details
-      tags:
-      - Payments
-  /api/v1/payments/{payment_id}/confirm:
-    put:
-      description: Confirm/capture a pending payment intent. Updates the existing
-        payment status to 'succeeded' (or 'requires_action' if further steps are needed).
-      operationId: confirm_payment_api_v1_payments__payment_id__confirm_put
-      parameters:
-      - in: path
-        name: payment_id
-        required: true
-        schema:
-          format: uuid
-          title: Payment Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaymentResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Confirm a payment
-      tags:
-      - Payments
-  /api/v1/payments/{payment_id}/receipt:
-    get:
-      description: Generate and download a PDF receipt for a succeeded payment.
-      operationId: download_receipt_api_v1_payments__payment_id__receipt_get
-      parameters:
-      - in: path
-        name: payment_id
-        required: true
-        schema:
-          format: uuid
-          title: Payment Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-            application/pdf: {}
-          description: PDF receipt file
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Download payment receipt
-      tags:
-      - Payments
-  /api/v1/webhooks/stripe:
-    post:
-      description: Receives and processes webhook events from Stripe. Verifies the
-        webhook signature before processing. This endpoint should be configured in
-        the Stripe Dashboard.
-      operationId: stripe_webhook_api_v1_webhooks_stripe_post
-      parameters:
-      - in: header
-        name: Stripe-Signature
-        required: true
-        schema:
-          title: Stripe-Signature
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Stripe webhook receiver
-      tags:
-      - Webhooks
-  /checkout/{session_id}:
-    get:
-      description: Serve the hosted checkout HTML page.
-      operationId: render_checkout_checkout__session_id__get
-      parameters:
-      - in: path
-        name: session_id
-        required: true
-        schema:
-          title: Session Id
-          type: string
-      responses:
-        '200':
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      summary: Render Checkout
-      tags:
-      - Checkout UI
-  /health:
-    get:
-      description: Returns service health status. Used by container orchestrators.
-      operationId: health_check_health_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                title: Response Health Check Health Get
-                type: object
-          description: Successful Response
-      summary: Health check
-      tags:
-      - Health
-  /ready:
-    get:
-      description: Checks connectivity to PostgreSQL and Redis.
-      operationId: readiness_check_ready_get
-      responses:
-        '200':
-          content:
-            application/json:
-              schema: {}
-          description: Successful Response
-      summary: Readiness probe
-      tags:
-      - Health
+      description: Enter your API key. Use the **admin key** (from ADMIN_API_KEY env var) for `/api/v1/admin/*` endpoints,
+        or a **tenant key** (ps_live_...) for payment/refund/customer operations.
+tags:
+- name: Checkout
+  description: '**Start here.** Create a hosted checkout session and redirect the end-user to the custom Digital Wallet checkout
+    page. This is the main integration point for client services to collect payments.'
+- name: Payments
+  description: Create, retrieve, confirm, cancel/refund payments, and download receipts.
+- name: Customers
+  description: Manage customers and query their Digital Wallet transaction history.
+- name: API Keys
+  description: Manage tenant API keys (admin only).
+- name: Digital Wallet
+  description: Get URLs for the Digital Wallet registration and dashboard pages.
+- name: Health
+  description: Service health and readiness probes.
 security:
 - ApiKeyAuth: []
-tags:
-- description: '**Start here.** Create a hosted checkout session and redirect the
-    end-user to Stripe''s payment page. This is the main integration point for client
-    services.'
-  name: Checkout
-- description: Create, retrieve, confirm, cancel/refund payments, and download receipts.
-  name: Payments
-- description: Manage customers synced with Stripe.
-  name: Customers
-- description: Receive and process Stripe webhook events.
-  name: Webhooks
-- description: Manage tenant API keys (admin only).
-  name: API Keys
-- description: Service health and readiness probes.
-  name: Health
+

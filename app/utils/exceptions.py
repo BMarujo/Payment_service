@@ -45,13 +45,6 @@ class RefundError(PaymentServiceError):
         super().__init__(detail=detail, status_code=422)
 
 
-class StripeError(PaymentServiceError):
-    """Stripe API communication error."""
-
-    def __init__(self, detail: str, status_code: int = 502):
-        super().__init__(detail=detail, status_code=status_code)
-
-
 class AuthenticationError(PaymentServiceError):
     """Authentication failure."""
 

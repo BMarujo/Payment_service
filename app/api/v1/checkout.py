@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.config import get_settings
 from app.models.checkout_session import CheckoutSession
 from app.models.payment import Payment, PaymentStatus
 from app.models.customer import Customer
@@ -24,8 +23,6 @@ from app.schemas.checkout import (
     CheckoutAuthorizeRequest,
     CheckoutAuthorizeResponse,
 )
-from app.schemas.payment import PaymentCreate
-from app.services.payment_service import payment_service
 from app.services.auth_service import verify_password
 from app.utils.exceptions import NotFoundError, PaymentError
 
@@ -94,11 +91,9 @@ async def create_checkout_session(
     # Generate local checkout URL
     base_url = str(request.base_url).rstrip("/")
     checkout_url = f"{base_url}/checkout/{session.id}"
-    settings = get_settings()
 
     return CheckoutSessionResponse(
         session_id=str(session.id),
-        publishable_key=settings.stripe_publishable_key,
         line_items=data.line_items,
         checkout_url=checkout_url,
         status=session.status,
@@ -215,11 +210,9 @@ async def get_checkout_session(
     # Generate local checkout URL
     base_url = str(request.base_url).rstrip("/")
     checkout_url = f"{base_url}/checkout/{session.id}"
-    settings = get_settings()
 
     return CheckoutSessionResponse(
         session_id=str(session.id),
-        publishable_key=settings.stripe_publishable_key,
         line_items=session.line_items,
         checkout_url=checkout_url,
         status=session.status,

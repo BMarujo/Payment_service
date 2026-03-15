@@ -143,10 +143,6 @@ class ReceiptService:
 
         if payment.description:
             details_data.append(["Description", payment.description])
-        if payment.stripe_payment_intent_id:
-            details_data.append(["Reference", payment.stripe_payment_intent_id])
-        if payment.payment_method_id:
-            details_data.append(["Payment Method", payment.payment_method_id])
 
         details_table = Table(details_data, colWidths=[120, 350])
         details_table.setStyle(

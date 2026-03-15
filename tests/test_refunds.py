@@ -32,7 +32,6 @@ class TestRefundService:
     def succeeded_payment(self):
         return Payment(
             id=uuid.uuid4(),
-            stripe_payment_intent_id="pi_test_456",
             amount=10000,
             currency="usd",
             status=PaymentStatus.SUCCEEDED,
@@ -45,7 +44,6 @@ class TestRefundService:
     def sample_refund(self):
         return Refund(
             id=uuid.uuid4(),
-            stripe_refund_id="re_test_123",
             payment_id=uuid.uuid4(),
             amount=5000,
             reason=RefundReason.REQUESTED_BY_CUSTOMER,

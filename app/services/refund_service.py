@@ -1,5 +1,5 @@
 """
-Refund business logic — orchestrates Stripe refund calls and DB operations.
+Refund business logic — processes refunds for the Digital Wallet system.
 """
 
 import logging
@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.payment import Payment, PaymentStatus
 from app.models.refund import Refund, RefundStatus, RefundReason
 from app.schemas.refund import RefundCreate, RefundResponse, RefundListResponse
-from app.services.stripe_service import stripe_service
 from app.utils.exceptions import NotFoundError, RefundError
 
 logger = logging.getLogger(__name__)
@@ -60,59 +59,17 @@ class RefundService:
         except ValueError:
             reason_enum = RefundReason.OTHER
 
-        if not payment.stripe_payment_intent_id:
-            # Internal wallet payment — process refund locally without Stripe
-            refund = Refund(
-                payment_id=data.payment_id,
-                amount=refund_amount,
-                reason=reason_enum,
-                status=RefundStatus.SUCCEEDED,
-                description=data.description,
-                idempotency_key=idempotency_key,
-            )
-            db.add(refund)
-
-            payment.amount_refunded += refund_amount
-            if payment.amount_refunded >= payment.amount:
-                payment.status = PaymentStatus.REFUNDED
-            else:
-                payment.status = PaymentStatus.PARTIALLY_REFUNDED
-
-            await db.flush()
-            await db.refresh(refund)
-
-            logger.info(
-                f"Wallet refund created: {refund.id} for payment {data.payment_id} "
-                f"amount={refund_amount} status={refund.status}"
-            )
-            return self._to_response(refund)
-
-        # Map reason for Stripe
-        stripe_reason = None
-        if data.reason in ("duplicate", "fraudulent", "requested_by_customer"):
-            stripe_reason = data.reason
-
-        # Create Stripe refund
-        stripe_refund = await stripe_service.create_refund(
-            payment_intent_id=payment.stripe_payment_intent_id,
-            amount=refund_amount,
-            reason=stripe_reason,
-            idempotency_key=idempotency_key,
-        )
-
-        # Persist refund
+        # Process refund locally
         refund = Refund(
-            stripe_refund_id=stripe_refund.id,
             payment_id=data.payment_id,
             amount=refund_amount,
             reason=reason_enum,
-            status=RefundStatus.SUCCEEDED if stripe_refund.status == "succeeded" else RefundStatus.PENDING,
+            status=RefundStatus.SUCCEEDED,
             description=data.description,
             idempotency_key=idempotency_key,
         )
         db.add(refund)
 
-        # Update payment refund tracking
         payment.amount_refunded += refund_amount
         if payment.amount_refunded >= payment.amount:
             payment.status = PaymentStatus.REFUNDED
@@ -179,7 +136,6 @@ class RefundService:
     def _to_response(refund: Refund) -> RefundResponse:
         return RefundResponse(
             id=refund.id,
-            stripe_refund_id=refund.stripe_refund_id,
             payment_id=refund.payment_id,
             amount=refund.amount,
             reason=refund.reason.value,

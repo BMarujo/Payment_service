@@ -1,5 +1,5 @@
 """
-Customer business logic — manages customers both locally and in Stripe.
+Customer business logic — manages customers in the Digital Wallet system.
 """
 
 import logging
@@ -16,7 +16,6 @@ from app.schemas.customer import (
     CustomerResponse,
     CustomerListResponse,
 )
-from app.services.stripe_service import stripe_service
 from app.utils.exceptions import NotFoundError
 
 logger = logging.getLogger(__name__)
@@ -28,23 +27,8 @@ class CustomerService:
     async def create_customer(
         self, db: AsyncSession, data: CustomerCreate
     ) -> CustomerResponse:
-        """Create a customer locally and in Stripe."""
-        # Convert metadata values to strings for Stripe
-        stripe_metadata = {}
-        if data.metadata:
-            stripe_metadata = {k: str(v) for k, v in data.metadata.items()}
-
-        # Create in Stripe
-        stripe_customer = await stripe_service.create_customer(
-            email=data.email,
-            name=data.name,
-            phone=data.phone,
-            metadata=stripe_metadata,
-        )
-
-        # Persist locally
+        """Create a customer locally."""
         customer = Customer(
-            stripe_customer_id=stripe_customer.id,
             email=data.email,
             name=data.name,
             phone=data.phone,
@@ -54,7 +38,7 @@ class CustomerService:
         await db.flush()
         await db.refresh(customer)
 
-        logger.info(f"Customer created: {customer.id} stripe_id={stripe_customer.id}")
+        logger.info(f"Customer created: {customer.id}")
         return self._to_response(customer)
 
     async def get_customer(
@@ -98,32 +82,11 @@ class CustomerService:
     async def update_customer(
         self, db: AsyncSession, customer_id: uuid.UUID, data: CustomerUpdate
     ) -> CustomerResponse:
-        """Update a customer locally and in Stripe."""
+        """Update a customer."""
         customer = await self._get_customer_or_404(db, customer_id)
 
-        # Build update params
         update_data = data.model_dump(exclude_unset=True)
 
-        # Update in Stripe
-        if customer.stripe_customer_id and update_data:
-            stripe_params = {}
-            if "email" in update_data:
-                stripe_params["email"] = update_data["email"]
-            if "name" in update_data:
-                stripe_params["name"] = update_data["name"]
-            if "phone" in update_data:
-                stripe_params["phone"] = update_data["phone"]
-            if "metadata" in update_data and update_data["metadata"]:
-                stripe_params["metadata"] = {
-                    k: str(v) for k, v in update_data["metadata"].items()
-                }
-
-            if stripe_params:
-                await stripe_service.update_customer(
-                    customer.stripe_customer_id, **stripe_params
-                )
-
-        # Update locally
         for key, value in update_data.items():
             if key == "metadata":
                 setattr(customer, "metadata_", value)
@@ -139,14 +102,9 @@ class CustomerService:
     async def delete_customer(
         self, db: AsyncSession, customer_id: uuid.UUID
     ) -> None:
-        """Soft-delete a customer (and delete from Stripe)."""
+        """Soft-delete a customer."""
         customer = await self._get_customer_or_404(db, customer_id)
 
-        # Delete from Stripe
-        if customer.stripe_customer_id:
-            await stripe_service.delete_customer(customer.stripe_customer_id)
-
-        # Soft delete locally
         customer.is_active = False
         await db.flush()
 
@@ -171,7 +129,6 @@ class CustomerService:
     def _to_response(customer: Customer) -> CustomerResponse:
         return CustomerResponse(
             id=customer.id,
-            stripe_customer_id=customer.stripe_customer_id,
             email=customer.email,
             name=customer.name,
             phone=customer.phone,
