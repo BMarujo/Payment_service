@@ -36,8 +36,8 @@ class CheckoutSession(Base):
     success_url = Column(Text, nullable=False)
     cancel_url = Column(Text, nullable=False)
     
-    # Required customer link
-    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False, index=True)
+    # Customer is bound at authorization time.
+    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True, index=True)
     customer = relationship("Customer")
     
     metadata_ = Column("metadata", JSONB, nullable=True, default=dict)

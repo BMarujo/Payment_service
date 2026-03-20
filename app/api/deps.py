@@ -49,6 +49,12 @@ async def get_current_customer(
     customer = result.scalar_one_or_none()
 
     if customer is None:
-        raise credentials_exception
+        # First wallet access for a valid Auth user: create local customer record
+        # so dashboard/transactions endpoints can work immediately after login.
+        customer = Customer(email=verified.email, is_active=True)
+        db.add(customer)
+        await db.flush()
+        await db.refresh(customer)
+        logger.info("Auto-provisioned wallet customer for %s", verified.email)
 
     return customer

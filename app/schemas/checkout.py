@@ -36,8 +36,8 @@ class CheckoutSessionCreate(BaseModel):
         ...,
         description="URL to redirect the customer if they cancel the checkout.",
     )
-    customer_email: str = Field(..., description="Email of a pre-registered customer in the Payment Service")
-    customer_name: Optional[str] = Field(default=None, description="Customer name shown on checkout UI")
+    customer_email: Optional[str] = Field(default=None, description="Optional customer email hint (legacy compatibility)")
+    customer_name: Optional[str] = Field(default=None, description="Optional customer name hint shown on checkout UI")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Arbitrary key-value metadata passed to the payment")
 
     model_config = {
@@ -80,6 +80,6 @@ class CheckoutSessionResponse(BaseModel):
     payment_status: str = Field(..., description="Payment status: unpaid, paid, or no_payment_required")
     amount_total: int = Field(..., description="Total amount in smallest currency unit")
     currency: str = Field(..., description="ISO 4217 currency code")
-    customer_name: str = Field(..., description="Customer name")
-    customer_email: str = Field(..., description="Customer email")
+    customer_name: Optional[str] = Field(default=None, description="Customer name")
+    customer_email: Optional[str] = Field(default=None, description="Customer email")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Metadata")

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register | Digital Wallet</title>
+    <title>Register</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -121,10 +121,33 @@
 <script>
     const EGS_TOKEN_KEY = 'egs_access_token';
     const AUTH_SERVICE_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+    const searchParams = new URLSearchParams(window.location.search);
+    const forceAuth = searchParams.get('force_auth') === '1';
+
+    function withCurrentQuery(path) {
+        const query = window.location.search;
+        return query ? `${path}${query}` : path;
+    }
+
+    function sanitizeReturnUrl(rawUrl) {
+        try {
+            const url = new URL(rawUrl, window.location.origin);
+            url.searchParams.delete('force_auth');
+            return url.toString();
+        } catch (_err) {
+            return rawUrl;
+        }
+    }
+
+    document.querySelector('.link-row a').href = withCurrentQuery('/wallet/login');
+
+    if (forceAuth) {
+        localStorage.removeItem(EGS_TOKEN_KEY);
+    }
 
     // If already logged in, go to dashboard
-    if (localStorage.getItem(EGS_TOKEN_KEY)) {
-        window.location.href = '/static/dashboard.html';
+    if (!forceAuth && localStorage.getItem(EGS_TOKEN_KEY)) {
+        window.location.href = '/wallet/dashboard';
     }
 
     document.getElementById('register-form').addEventListener('submit', async (e) => {
@@ -156,32 +179,11 @@
                 throw new Error(registerData.detail || 'Registration failed');
             }
 
-            // Login right after successful registration to obtain an access token.
-            const loginResp = await fetch(`${AUTH_SERVICE_BASE}/api/v1/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
-            });
-
-            const loginData = await loginResp.json();
-
-            if (!loginResp.ok || !loginData.access_token) {
-                throw new Error(loginData.detail || 'Registration succeeded, but auto-login failed');
-            }
-
-            localStorage.setItem(EGS_TOKEN_KEY, loginData.access_token);
-
-            successEl.textContent = 'Account created! Redirecting...';
+            successEl.textContent = 'Account created! Redirecting to sign in...';
             successEl.style.display = 'block';
 
             setTimeout(() => {
-                const returnUrl = localStorage.getItem('checkout_return_url');
-                if (returnUrl) {
-                    localStorage.removeItem('checkout_return_url');
-                    window.location.href = returnUrl;
-                } else {
-                    window.location.href = '/static/dashboard.html';
-                }
+                window.location.href = withCurrentQuery('/wallet/login');
             }, 1000);
 
         } catch (err) {

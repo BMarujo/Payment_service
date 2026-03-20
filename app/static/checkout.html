@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Checkout | Digital Wallet</title>
+    <title>Secure Checkout</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -194,17 +194,43 @@
     <script>
         const pathParts = window.location.pathname.split('/');
         const sessionId = pathParts[pathParts.length - 1];
+        const queryParams = new URLSearchParams(window.location.search);
+        const forceAuth = queryParams.get('force_auth') === '1';
         let sessionData = {};
 
         // EGS Auth Service token management
         const EGS_TOKEN_KEY = 'egs_access_token';
         const getToken = () => localStorage.getItem(EGS_TOKEN_KEY);
 
-        function redirectToLogin() {
-            // Store the current checkout URL so EGS login can redirect back
-            localStorage.setItem('checkout_return_url', window.location.href);
-            // Redirect to the EGS Auth frontend login page
-            window.location.href = '/static/login.html';
+        function getEmailFromToken(token) {
+            try {
+                const parts = String(token || '').split('.');
+                if (parts.length < 2) return '';
+                const payloadPart = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+                const payload = JSON.parse(atob(payloadPart));
+                return String(payload?.email || '').trim();
+            } catch (_err) {
+                return '';
+            }
+        }
+
+        function redirectToLogin(storeReturnUrl = true, message = '') {
+            if (storeReturnUrl) {
+                // Keep checkout URL only for normal unauthenticated flow.
+                localStorage.setItem('checkout_return_url', window.location.href);
+            } else {
+                localStorage.removeItem('checkout_return_url');
+            }
+
+            if (message) {
+                localStorage.setItem('checkout_login_error', message);
+            } else {
+                localStorage.removeItem('checkout_login_error');
+            }
+
+            // Redirect through the canonical wallet login route and force
+            // account selection to avoid being stuck with a previous session.
+            window.location.href = '/wallet/login?force_auth=1';
         }
 
         const formatMoney = (amount, currency) => {
@@ -213,6 +239,11 @@
 
         async function loadSession() {
             try {
+                if (forceAuth) {
+                    redirectToLogin(true);
+                    return;
+                }
+
                 const res = await fetch(`/api/v1/checkout/${sessionId}`);
                 if (!res.ok) throw new Error('Failed to load checkout session');
                 
@@ -248,13 +279,16 @@
                 // Check auth state
                 const token = getToken();
                 if (token) {
-                    document.getElementById('email').value = sessionData.customer_email || '';
+                    const tokenEmail = getEmailFromToken(token);
+                    document.getElementById('email').value = tokenEmail || sessionData.customer_email || 'Authenticated user';
                     document.getElementById('payment-form').classList.remove('hidden');
                     document.getElementById('not-logged-in').classList.add('hidden');
                 } else {
                     document.getElementById('email').value = sessionData.customer_email || 'Not logged in';
                     document.getElementById('not-logged-in').classList.remove('hidden');
                     document.getElementById('payment-form').classList.add('hidden');
+                    redirectToLogin(true);
+                    return;
                 }
 
                 document.getElementById('page-loader').classList.add('hidden');
