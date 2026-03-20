@@ -59,3 +59,4 @@ class CustomerListResponse(BaseModel):
     limit: int
     offset: int
     has_more: bool
+

@@ -99,10 +99,6 @@ def create_app() -> FastAPI:
                 "description": "Manage tenant API keys (admin only).",
             },
             {
-                "name": "Digital Wallet",
-                "description": "Get URLs for the Digital Wallet registration and dashboard pages.",
-            },
-            {
                 "name": "Health",
                 "description": "Service health and readiness probes.",
             },
@@ -171,17 +167,16 @@ def create_app() -> FastAPI:
         # 2. Skip auth and rate limiting for health, docs, webhooks, openapi, and the public checkout page
         path = request.url.path
         skip_paths = (
-            "/health", "/ready", "/docs", "/redoc", "/openapi.json",
-            "/checkout/", "/static", "/app/", "/api/v1/auth/",
-            "/api/v1/customers/me", "/wallet/",
+            "/health", "/docs", "/redoc", "/openapi.json",
+            "/checkout/", "/static", "/app/", "/wallet/",
+            "/api/v1/customers/me",
         )
         skip_auth = any(path.startswith(p) for p in skip_paths)
         
-        # Make GET /sessions/{id} and POST /sessions/{id}/authorize public
-        if path.startswith("/api/v1/checkout/sessions/"):
-            # Only allow if there's a specific ID after /sessions/
+        # Make GET /checkout/{id} and POST /checkout/{id}/authorize public
+        if path.startswith("/api/v1/checkout/"):
             parts = path.split("/")
-            if len(parts) >= 6 and parts[5]:  # /api/v1/checkout/sessions/{id}
+            if len(parts) >= 5 and parts[4]:  # /api/v1/checkout/{id}
                 if request.method == "GET" or parts[-1] == "authorize":
                     skip_auth = True
 
@@ -259,7 +254,11 @@ def create_app() -> FastAPI:
                 rl_window = settings.rate_limit_window_seconds
 
             # Rate limiting (per raw key)
-            allowed, rate_headers = await rate_limiter.is_allowed(raw_key)
+            allowed, rate_headers = await rate_limiter.is_allowed(
+                raw_key,
+                max_requests=rl_requests,
+                window_seconds=rl_window,
+            )
             if not allowed:
                 response = JSONResponse(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -299,48 +298,18 @@ def create_app() -> FastAPI:
     os.makedirs("app/static", exist_ok=True)
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-    @app.get("/app/register", tags=["Digital Wallet"], summary="Get wallet registration page URL",
-             description="Returns the URL for the Digital Wallet registration page. Redirect the user's browser there to create a wallet account.")
-    async def get_register_url(request: Request):
-        base_url = str(request.base_url).rstrip("/")
-        return {"register_url": f"{base_url}/wallet/register"}
-
-    @app.get("/app/dashboard", tags=["Digital Wallet"], summary="Get wallet dashboard page URL",
-             description="Returns the URL for the Digital Wallet dashboard page. Redirect the user's browser there to manage their wallet.")
-    async def get_dashboard_url(request: Request):
-        base_url = str(request.base_url).rstrip("/")
-        return {"dashboard_url": f"{base_url}/wallet/dashboard"}
-
-    @app.get("/app/login", tags=["Digital Wallet"], summary="Get wallet login page URL",
-             description="Returns the URL for the Digital Wallet login page. Redirect existing users there to sign in.")
-    async def get_login_url(request: Request):
-        base_url = str(request.base_url).rstrip("/")
-        return {"login_url": f"{base_url}/wallet/login"}
-
     # ── HTML pages (served directly, hidden from API docs) ──
     @app.get("/wallet/register", include_in_schema=False)
     async def render_register(request: Request):
-        from fastapi.templating import Jinja2Templates
-        import os
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "static"))
-        return templates.TemplateResponse("register.html", {"request": request})
+        return FileResponse("app/static/register.html")
 
     @app.get("/wallet/login", include_in_schema=False)
     async def render_login(request: Request):
-        from fastapi.templating import Jinja2Templates
-        import os
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "static"))
-        return templates.TemplateResponse("login.html", {"request": request})
+        return FileResponse("app/static/login.html")
 
     @app.get("/wallet/dashboard", include_in_schema=False)
     async def render_dashboard(request: Request):
-        from fastapi.templating import Jinja2Templates
-        import os
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "static"))
-        return templates.TemplateResponse("dashboard.html", {"request": request})
+        return FileResponse("app/static/dashboard.html")
 
     @app.get("/checkout/{session_id}", summary="Hosted Checkout UI", include_in_schema=False)
     async def render_checkout(session_id: str):

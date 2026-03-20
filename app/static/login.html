@@ -87,7 +87,7 @@
 
 <div class="container">
     <h1>Welcome Back</h1>
-    <p class="subtitle">Sign in to your Digital Wallet.</p>
+    <p class="subtitle">Sign in to your account.</p>
 
     <form id="login-form">
         <div class="form-group">
@@ -111,9 +111,18 @@
 </div>
 
 <script>
-    // If already logged in, go to dashboard
-    if (localStorage.getItem('wallet_token')) {
-        window.location.href = '/wallet/dashboard';
+    const EGS_TOKEN_KEY = 'egs_access_token';
+    const AUTH_SERVICE_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+
+    // If already logged in, redirect
+    if (localStorage.getItem(EGS_TOKEN_KEY)) {
+        const returnUrl = localStorage.getItem('checkout_return_url');
+        if (returnUrl) {
+            localStorage.removeItem('checkout_return_url');
+            window.location.href = returnUrl;
+        } else {
+            window.location.href = '/static/dashboard.html';
+        }
     }
 
     document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -129,7 +138,8 @@
         btn.disabled = true;
 
         try {
-            const resp = await fetch('/api/v1/auth/login', {
+            // Authenticate directly with the EGS Auth Service.
+            const resp = await fetch(`${AUTH_SERVICE_BASE}/api/v1/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password })
@@ -141,8 +151,17 @@
                 throw new Error(data.detail || 'Login failed');
             }
 
-            localStorage.setItem('wallet_token', data.access_token);
-            window.location.href = '/wallet/dashboard';
+            // Store the token
+            localStorage.setItem(EGS_TOKEN_KEY, data.access_token);
+
+            // Redirect
+            const returnUrl = localStorage.getItem('checkout_return_url');
+            if (returnUrl) {
+                localStorage.removeItem('checkout_return_url');
+                window.location.href = returnUrl;
+            } else {
+                window.location.href = '/static/dashboard.html';
+            }
 
         } catch (err) {
             errorEl.textContent = err.message;

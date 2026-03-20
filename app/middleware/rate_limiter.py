@@ -28,7 +28,12 @@ class RateLimiter:
             self._redis = redis.from_url(self._redis_url, decode_responses=True)
         return self._redis
 
-    async def is_allowed(self, identifier: str) -> tuple[bool, dict]:
+    async def is_allowed(
+        self,
+        identifier: str,
+        max_requests: Optional[int] = None,
+        window_seconds: Optional[int] = None,
+    ) -> tuple[bool, dict]:
         """
         Check if the request is allowed under the rate limit.
 
@@ -36,10 +41,12 @@ class RateLimiter:
             (allowed, headers) where headers is a dict of rate-limit headers.
         """
         try:
+            limit = max_requests or self._max_requests
+            window = window_seconds or self._window_seconds
             r = await self._get_redis()
             key = f"rate_limit:{identifier}"
             now = time.time()
-            window_start = now - self._window_seconds
+            window_start = now - window
 
             pipe = r.pipeline()
             # Remove old entries outside the window
@@ -49,17 +56,17 @@ class RateLimiter:
             # Count requests in window
             pipe.zcard(key)
             # Set expiry on the key
-            pipe.expire(key, self._window_seconds)
+            pipe.expire(key, window)
             results = await pipe.execute()
 
             request_count = results[2]
-            remaining = max(0, self._max_requests - request_count)
-            allowed = request_count <= self._max_requests
+            remaining = max(0, limit - request_count)
+            allowed = request_count <= limit
 
             headers = {
-                "X-RateLimit-Limit": str(self._max_requests),
+                "X-RateLimit-Limit": str(limit),
                 "X-RateLimit-Remaining": str(remaining),
-                "X-RateLimit-Reset": str(int(now + self._window_seconds)),
+                "X-RateLimit-Reset": str(int(now + window)),
             }
 
             if not allowed:
@@ -71,7 +78,7 @@ class RateLimiter:
             logger.warning(f"Redis error (rate limiter): {e}, allowing request")
             # Fail open — don't block requests if Redis is down
             return True, {
-                "X-RateLimit-Limit": str(self._max_requests),
+                "X-RateLimit-Limit": str(max_requests or self._max_requests),
                 "X-RateLimit-Remaining": "unknown",
                 "X-RateLimit-Reset": "unknown",
             }

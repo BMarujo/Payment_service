@@ -7,7 +7,6 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
-from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -29,19 +28,19 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
 
-
 @router.post(
     "",
     response_model=CustomerResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a customer",
-    description="Create a new customer in the system.",
+    description="Create a new customer in the system (merchant/admin use).",
 )
 async def create_customer(
     data: CustomerCreate,
     db: AsyncSession = Depends(get_db),
 ):
     return await customer_service.create_customer(db=db, data=data)
+
 
 
 @router.get(

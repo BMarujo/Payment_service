@@ -36,8 +36,8 @@ class CheckoutSessionCreate(BaseModel):
         ...,
         description="URL to redirect the customer if they cancel the checkout.",
     )
-    customer_email: str = Field(..., description="Email of the customer. If they don't exist in the Payment Service, a new identity will be created automatically.")
-    customer_name: Optional[str] = Field(default=None, description="Name of the customer (used if creating a new identity)")
+    customer_email: str = Field(..., description="Email of a pre-registered customer in the Payment Service")
+    customer_name: Optional[str] = Field(default=None, description="Customer name shown on checkout UI")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Arbitrary key-value metadata passed to the payment")
 
     model_config = {
@@ -58,9 +58,6 @@ class CheckoutSessionCreate(BaseModel):
         }
     }
 
-
-class CheckoutAuthorizeRequest(BaseModel):
-    password: str = Field(..., description="Customer's wallet password to authorize the transaction")
 
 class CheckoutAuthorizeResponse(BaseModel):
     status: str = Field(..., description="Authorization status (e.g. 'succeeded')")

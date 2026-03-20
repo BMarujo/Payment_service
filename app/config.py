@@ -28,8 +28,9 @@ class Settings(BaseSettings):
     # ── Redis ────────────────────────────────
     redis_url: str = Field(default="redis://redis:6379/0")
 
-    # ── JWT ──────────────────────────────────
-    jwt_secret: str = Field(default="change-me-jwt-secret-in-production")
+    # ── EGS Auth Service ─────────────────────
+    auth_service_url: str = Field(default="http://localhost:8000")
+    internal_service_key: str = Field(default="change-me-in-production")
 
     # ── Rate Limiting ────────────────────────
     rate_limit_requests: int = Field(default=100)

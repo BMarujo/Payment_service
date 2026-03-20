@@ -165,25 +165,29 @@
         </div>
 
         <div class="payment-section">
-            <h2>Digital Wallet Authorization</h2>
-            <form id="payment-form">
+            <h2>Authorize Payment</h2>
+            <div id="auth-section">
                 <div class="form-row">
-                    <label for="email">Wallet Email</label>
+                    <label>Authenticated as</label>
                     <input type="email" id="email" class="input-base" readonly>
                 </div>
-                <div class="form-row">
-                    <label for="password">Wallet Password</label>
-                    <input type="password" id="password" class="input-base" placeholder="Enter your password to authorize" required>
-                </div>
                 <div id="error-message"></div>
-                <button id="submit-button" type="submit">
-                    <span id="button-text">Authorize Payment</span>
-                    <div class="spinner" id="button-spinner"></div>
-                </button>
+                <div id="not-logged-in" class="hidden" style="text-align:center; padding: 20px 0;">
+                    <p style="color: var(--text-muted); margin-bottom: 16px;">You need to be logged in to your account to authorize this payment.</p>
+                    <button id="login-button" type="button" onclick="redirectToLogin()" style="cursor:pointer;">
+                        Login to authorize
+                    </button>
+                </div>
+                <form id="payment-form" class="hidden">
+                    <button id="submit-button" type="submit">
+                        <span id="button-text">Authorize Payment</span>
+                        <div class="spinner" id="button-spinner"></div>
+                    </button>
+                </form>
                 <div style="text-align: center; margin-top: 20px;">
                     <a href="#" id="cancel-link" style="color: var(--text-muted); font-size: 14px;">Cancel and return to merchant</a>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
 
@@ -192,13 +196,24 @@
         const sessionId = pathParts[pathParts.length - 1];
         let sessionData = {};
 
+        // EGS Auth Service token management
+        const EGS_TOKEN_KEY = 'egs_access_token';
+        const getToken = () => localStorage.getItem(EGS_TOKEN_KEY);
+
+        function redirectToLogin() {
+            // Store the current checkout URL so EGS login can redirect back
+            localStorage.setItem('checkout_return_url', window.location.href);
+            // Redirect to the EGS Auth frontend login page
+            window.location.href = '/static/login.html';
+        }
+
         const formatMoney = (amount, currency) => {
             return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' }).format(amount / 100);
         };
 
         async function loadSession() {
             try {
-                const res = await fetch(`/api/v1/checkout/sessions/${sessionId}`);
+                const res = await fetch(`/api/v1/checkout/${sessionId}`);
                 if (!res.ok) throw new Error('Failed to load checkout session');
                 
                 sessionData = await res.json();
@@ -208,7 +223,7 @@
                         <div style="text-align:center; margin-top:100px;">
                             <h2>Checkout Session Closed</h2>
                             <p style="color:var(--text-muted)">This session is currently <b>${sessionData.status}</b>.</p>
-                            <button onclick="window.location.href='${sessionData.cancel_url || '/'}'" style="padding:10px 20px; margin-top:20px; cursor:pointer;">Go Back</button>
+                            <button onclick="window.location.href='${sessionData.cancel_url || '/'}'">Go Back</button>
                         </div>`;
                     return;
                 }
@@ -228,9 +243,19 @@
                 }
                 
                 document.getElementById('total-amount').textContent = formatMoney(sessionData.amount_total, sessionData.currency);
-                document.getElementById('email').value = sessionData.customer_email || '';
-                
                 document.getElementById('cancel-link').href = sessionData.cancel_url || '/';
+
+                // Check auth state
+                const token = getToken();
+                if (token) {
+                    document.getElementById('email').value = sessionData.customer_email || '';
+                    document.getElementById('payment-form').classList.remove('hidden');
+                    document.getElementById('not-logged-in').classList.add('hidden');
+                } else {
+                    document.getElementById('email').value = sessionData.customer_email || 'Not logged in';
+                    document.getElementById('not-logged-in').classList.remove('hidden');
+                    document.getElementById('payment-form').classList.add('hidden');
+                }
 
                 document.getElementById('page-loader').classList.add('hidden');
                 document.getElementById('checkout-container').classList.remove('hidden');
@@ -246,7 +271,12 @@
             const btnText = document.getElementById('button-text');
             const spinner = document.getElementById('button-spinner');
             const errorMsg = document.getElementById('error-message');
-            const password = document.getElementById('password').value;
+            const token = getToken();
+
+            if (!token) {
+                errorMsg.textContent = 'You must be logged in to authorize.';
+                return;
+            }
 
             btn.disabled = true;
             btnText.style.display = 'none';
@@ -254,20 +284,21 @@
             errorMsg.textContent = '';
 
             try {
-                const res = await fetch(`/api/v1/checkout/sessions/${sessionId}/authorize`, {
+                const res = await fetch(`/api/v1/checkout/${sessionId}/authorize`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password })
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
                 });
 
                 const data = await res.json();
                 
                 if (!res.ok) {
-                    throw new Error(data.detail || "Authorization failed.");
+                    throw new Error(data.detail || 'Authorization failed.');
                 }
 
                 if (data.status === 'succeeded') {
-                    // Redirect to success_url
                     const successUrl = new URL(data.success_url, window.location.origin);
                     successUrl.searchParams.append('session_id', sessionId);
                     window.location.href = successUrl.toString();

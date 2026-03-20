@@ -15,13 +15,10 @@
             --text-muted: #94a3b8;
             --border-color: #334155;
             --error-color: #ef4444;
+            --success-color: #10b981;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: 'Inter', sans-serif;
@@ -42,30 +39,11 @@
             max-width: 400px;
         }
 
-        h1 {
-            font-size: 1.5rem;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-            text-align: center;
-        }
+        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; font-weight: 600; text-align: center; }
+        p.subtitle { color: var(--text-muted); text-align: center; margin-bottom: 2rem; font-size: 0.875rem; }
 
-        p.subtitle {
-            color: var(--text-muted);
-            text-align: center;
-            margin-bottom: 2rem;
-            font-size: 0.875rem;
-        }
-
-        .form-group {
-            margin-bottom: 1.25rem;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-size: 0.875rem;
-            font-weight: 500;
-        }
+        .form-group { margin-bottom: 1.25rem; }
+        label { display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500; }
 
         input {
             width: 100%;
@@ -77,11 +55,7 @@
             font-size: 1rem;
             transition: border-color 0.2s;
         }
-
-        input:focus {
-            outline: none;
-            border-color: var(--primary-color);
-        }
+        input:focus { outline: none; border-color: var(--primary-color); }
 
         button {
             width: 100%;
@@ -96,17 +70,10 @@
             transition: background-color 0.2s;
             margin-top: 1rem;
         }
+        button:hover { background-color: var(--primary-hover); }
 
-        button:hover {
-            background-color: var(--primary-hover);
-        }
-
-        .error {
-            color: var(--error-color);
-            font-size: 0.875rem;
-            margin-top: 0.5rem;
-            display: none;
-        }
+        .error { color: var(--error-color); font-size: 0.875rem; margin-top: 0.5rem; display: none; }
+        .success { color: var(--success-color); font-size: 0.875rem; margin-top: 0.5rem; display: none; }
 
         .link-row {
             text-align: center;
@@ -121,28 +88,29 @@
 <body>
 
 <div class="container">
-    <h1>Create Wallet</h1>
-    <p class="subtitle">Register to manage your payments efficiently.</p>
+    <h1>Create Account</h1>
+    <p class="subtitle">Register to use the payment service.</p>
 
     <form id="register-form">
         <div class="form-group">
             <label for="name">Full Name</label>
-            <input type="text" id="name" required placeholder="Alice Smith">
+            <input type="text" id="name" required placeholder="Jane Doe">
         </div>
-        
+
         <div class="form-group">
             <label for="email">Email Address</label>
-            <input type="email" id="email" required placeholder="alice@example.com">
+            <input type="email" id="email" required placeholder="jane@example.com">
         </div>
-        
+
         <div class="form-group">
             <label for="password">Password</label>
-            <input type="password" id="password" required placeholder="••••••••" minlength="8">
+            <input type="password" id="password" required minlength="8" placeholder="Minimum 8 characters">
         </div>
 
         <div id="error-message" class="error"></div>
+        <div id="success-message" class="success"></div>
 
-        <button type="submit" id="submit-btn">Register Account</button>
+        <button type="submit" id="submit-btn">Create Account</button>
     </form>
 
     <div class="link-row">
@@ -151,40 +119,75 @@
 </div>
 
 <script>
+    const EGS_TOKEN_KEY = 'egs_access_token';
+    const AUTH_SERVICE_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+
+    // If already logged in, go to dashboard
+    if (localStorage.getItem(EGS_TOKEN_KEY)) {
+        window.location.href = '/static/dashboard.html';
+    }
+
     document.getElementById('register-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
         const name = document.getElementById('name').value;
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
         const errorEl = document.getElementById('error-message');
+        const successEl = document.getElementById('success-message');
         const btn = document.getElementById('submit-btn');
 
         errorEl.style.display = 'none';
-        btn.textContent = 'Registering...';
+        successEl.style.display = 'none';
+        btn.textContent = 'Creating account...';
         btn.disabled = true;
 
         try {
-            const resp = await fetch('/api/v1/auth/register', {
+            // Register directly in the EGS Auth Service.
+            const registerResp = await fetch(`${AUTH_SERVICE_BASE}/api/v1/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, email, password })
+                body: JSON.stringify({ full_name: name, email, password })
             });
 
-            const data = await resp.json();
+            const registerData = await registerResp.json();
 
-            if (!resp.ok) {
-                throw new Error(data.detail || 'Registration failed');
+            if (!registerResp.ok) {
+                throw new Error(registerData.detail || 'Registration failed');
             }
 
-            // Save token and redirect
-            localStorage.setItem('wallet_token', data.access_token);
-            window.location.href = '/wallet/dashboard';
-            
+            // Login right after successful registration to obtain an access token.
+            const loginResp = await fetch(`${AUTH_SERVICE_BASE}/api/v1/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const loginData = await loginResp.json();
+
+            if (!loginResp.ok || !loginData.access_token) {
+                throw new Error(loginData.detail || 'Registration succeeded, but auto-login failed');
+            }
+
+            localStorage.setItem(EGS_TOKEN_KEY, loginData.access_token);
+
+            successEl.textContent = 'Account created! Redirecting...';
+            successEl.style.display = 'block';
+
+            setTimeout(() => {
+                const returnUrl = localStorage.getItem('checkout_return_url');
+                if (returnUrl) {
+                    localStorage.removeItem('checkout_return_url');
+                    window.location.href = returnUrl;
+                } else {
+                    window.location.href = '/static/dashboard.html';
+                }
+            }, 1000);
+
         } catch (err) {
             errorEl.textContent = err.message;
             errorEl.style.display = 'block';
-            btn.textContent = 'Register Account';
+            btn.textContent = 'Create Account';
             btn.disabled = false;
         }
     });

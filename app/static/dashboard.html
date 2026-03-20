@@ -122,7 +122,7 @@
 </div>
 
 <script>
-    const token = localStorage.getItem('wallet_token');
+    const token = localStorage.getItem('egs_access_token');
     
     if (!token) {
         window.location.href = '/wallet/login';
@@ -169,7 +169,7 @@
     }
 
     function logout() {
-        localStorage.removeItem('wallet_token');
+        localStorage.removeItem('egs_access_token');
         window.location.href = '/wallet/login';
     }
 

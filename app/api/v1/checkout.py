@@ -20,10 +20,8 @@ from app.models.customer import Customer
 from app.schemas.checkout import (
     CheckoutSessionCreate,
     CheckoutSessionResponse,
-    CheckoutAuthorizeRequest,
     CheckoutAuthorizeResponse,
 )
-from app.services.auth_service import verify_password
 from app.utils.exceptions import NotFoundError, PaymentError
 
 logger = logging.getLogger(__name__)
@@ -32,7 +30,7 @@ router = APIRouter(prefix="/checkout", tags=["Checkout"])
 
 
 @router.post(
-    "/sessions",
+    "",
     response_model=CheckoutSessionResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a custom checkout session",
@@ -60,16 +58,16 @@ async def create_checkout_session(
     if data.metadata:
         metadata = {k: str(v) for k, v in data.metadata.items()}
 
-    # Retrieve or create customer by email
+    # Look up existing customer by email (must already be registered)
     cust_res = await db.execute(select(Customer).where(Customer.email == data.customer_email))
     customer = cust_res.scalar_one_or_none()
     if not customer:
-        customer = Customer(
-            email=data.customer_email,
-            name=data.customer_name or "Guest User"
+        raise NotFoundError(
+            "Customer",
+            data.customer_email,
+            detail=f"No customer found with email '{data.customer_email}'. "
+                   "The customer must register on the Payment Service before a checkout session can be created."
         )
-        db.add(customer)
-        await db.flush()
 
     # Create local session
     session = CheckoutSession(
@@ -110,17 +108,40 @@ async def create_checkout_session(
 
 
 @router.post(
-    "/sessions/{session_id}/authorize",
+    "/{session_id}/authorize",
     response_model=CheckoutAuthorizeResponse,
-    summary="Authorize a checkout session via Password",
+    summary="Authorize a checkout session via EGS Bearer token",
 )
 async def authorize_checkout_session(
     session_id: uuid.UUID,
-    data: CheckoutAuthorizeRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    # Fetch session + customer eager load
+    """Authorize a checkout session using the user's EGS Auth Bearer token.
+    
+    The frontend must send an Authorization: Bearer <token> header obtained
+    from the EGS Auth Service after the user logs in.
+    """
     from sqlalchemy.orm import selectinload
+    from app.services.auth_client import verify_token_with_auth_service
+
+    # 1. Extract Bearer token from Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header. Use: Bearer <token>")
+    
+    token = auth_header.split(" ", 1)[1]
+
+    # 2. Verify token with EGS Auth Service
+    try:
+        verified = await verify_token_with_auth_service(token)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
+    
+    if not verified:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # 3. Fetch checkout session + customer
     result = await db.execute(
         select(CheckoutSession)
         .options(selectinload(CheckoutSession.customer))
@@ -135,15 +156,16 @@ async def authorize_checkout_session(
         raise HTTPException(
             status_code=400, detail=f"Checkout session is already {session.status}"
         )
-        
+
+    # 4. Ensure the verified user matches the session's customer
     customer = session.customer
-    if not customer.hashed_password:
-        raise HTTPException(status_code=400, detail="Customer does not have a digital wallet password configured.")
+    if customer.email != verified.email:
+        raise HTTPException(
+            status_code=403,
+            detail="Authenticated user does not match the checkout session customer"
+        )
         
-    if not verify_password(data.password, customer.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid wallet password")
-        
-    # Create the internal payment as SUCCESS instantly (Internal Wallet simulation)
+    # 5. Create the internal payment as SUCCESS instantly
     payment = Payment(
         customer_id=customer.id,
         amount=session.amount_total,
@@ -156,7 +178,7 @@ async def authorize_checkout_session(
     await db.flush()
     await db.refresh(payment)
     
-    # Mark session completed
+    # 6. Mark session completed
     session.payment_id = payment.id
     session.status = "complete"
     db.add(session)
@@ -170,7 +192,7 @@ async def authorize_checkout_session(
 
 
 @router.get(
-    "/sessions/{session_id}",
+    "/{session_id}",
     response_model=CheckoutSessionResponse,
     summary="Get checkout session status",
     description=(
