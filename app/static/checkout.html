@@ -3,34 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Checkout</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <title>APalPay — Secure Checkout</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0f172a;
-            --box-bg: #1e293b;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --accent-color: #3b82f6;
-            --accent-hover: #2563eb;
-            --border-color: #334155;
-            --error-color: #ef4444;
-            --success-color: #10b981;
+            --bg-color: #1a0a0a;
+            --box-bg: rgba(40, 15, 15, 0.75);
+            --text-main: #fef2f2;
+            --text-muted: #fca5a5;
+            --accent-color: #dc2626;
+            --accent-hover: #b91c1c;
+            --accent-glow: rgba(220, 38, 38, 0.25);
+            --border-color: rgba(220, 38, 38, 0.2);
+            --error-color: #fbbf24;
+            --success-color: #4ade80;
+            --input-bg: rgba(15, 5, 5, 0.6);
             --font-family: 'Inter', sans-serif;
-            --border-radius: 12px;
-            --box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+            --border-radius: 16px;
+            --box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
         }
 
         body {
             margin: 0;
             padding: 0;
             font-family: var(--font-family);
-            background-color: var(--bg-color);
+            background: var(--bg-color);
+            background-image:
+                radial-gradient(ellipse at 30% 40%, rgba(220, 38, 38, 0.1) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 80%, rgba(185, 28, 28, 0.06) 0%, transparent 50%);
             color: var(--text-main);
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
+            padding: 1rem;
+        }
+
+        .brand-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 1.5rem;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .brand-bar img {
+            width: 44px;
+            height: auto;
+            border-radius: 10px;
+        }
+
+        .brand-bar span {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            letter-spacing: -0.5px;
         }
 
         .checkout-container {
@@ -38,11 +66,26 @@
             flex-direction: column;
             width: 100%;
             max-width: 960px;
-            background-color: var(--box-bg);
+            background: var(--box-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
+            box-shadow:
+                0 0 0 1px var(--border-color),
+                var(--box-shadow),
+                0 0 80px var(--accent-glow);
             overflow: hidden;
-            border: 1px solid var(--border-color);
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
         }
 
         @media(min-width: 768px) {
@@ -52,7 +95,7 @@
         .order-summary {
             padding: 40px;
             flex: 1;
-            background: linear-gradient(135deg, rgba(30,41,59,1) 0%, rgba(15,23,42,1) 100%);
+            background: linear-gradient(135deg, rgba(40, 15, 15, 0.9) 0%, rgba(26, 10, 10, 0.95) 100%);
             border-bottom: 1px solid var(--border-color);
         }
         @media(min-width: 768px) {
@@ -62,27 +105,31 @@
             }
         }
 
-        .order-summary h2 { margin-top: 0; font-size: 24px; font-weight: 600; margin-bottom: 24px; }
+        .order-summary h2 { margin-top: 0; font-size: 1.25rem; font-weight: 600; margin-bottom: 24px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; font-size: 0.875rem; }
 
         .line-item {
             display: flex;
             justify-content: space-between;
             margin-bottom: 16px;
             padding-bottom: 16px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
+            border-bottom: 1px solid rgba(220, 38, 38, 0.1);
         }
 
         .item-details { display: flex; flex-direction: column; }
         .item-name { font-weight: 500; }
         .item-qty { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
-        .item-price { font-weight: 500; }
+        .item-price { font-weight: 600; font-variant-numeric: tabular-nums; }
 
         .total-row {
             display: flex;
             justify-content: space-between;
             margin-top: 24px;
-            font-size: 20px;
-            font-weight: 600;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .total-row .total-amount {
+            color: var(--accent-color);
         }
 
         .payment-section {
@@ -92,7 +139,21 @@
             flex-direction: column;
         }
 
-        .payment-section h2 { margin-top: 0; font-size: 20px; font-weight: 500; margin-bottom: 24px; }
+        .payment-section h2 {
+            margin-top: 0;
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .shield-icon {
+            width: 20px;
+            height: 20px;
+            fill: var(--accent-color);
+        }
 
         .form-row { margin-bottom: 20px; }
         .form-row label { display: block; margin-bottom: 8px; font-size: 14px; color: var(--text-muted); font-weight: 500; }
@@ -100,16 +161,20 @@
         .input-base {
             width: 100%;
             padding: 14px;
-            background-color: #0f172a;
+            background-color: var(--input-bg);
             border: 1px solid var(--border-color);
             border-radius: 8px;
             color: white;
             font-size: 16px;
             box-sizing: border-box;
-            transition: border-color 0.2s;
+            transition: border-color 0.2s, box-shadow 0.2s;
             font-family: var(--font-family);
         }
-        .input-base:focus { outline: none; border-color: var(--accent-color); }
+        .input-base:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
         .input-base:read-only { opacity: 0.7; cursor: not-allowed; }
 
         #error-message { color: var(--error-color); font-size: 14px; margin-top: 12px; min-height: 20px; }
@@ -117,21 +182,26 @@
         button {
             width: 100%;
             padding: 16px;
-            background-color: var(--accent-color);
+            background: linear-gradient(135deg, var(--accent-color), #991b1b);
             color: white;
             border: none;
             border-radius: 8px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: transform 0.15s, box-shadow 0.2s;
             margin-top: 10px;
             display: flex;
             justify-content: center;
             align-items: center;
+            font-family: var(--font-family);
         }
-        button:hover { background-color: var(--accent-hover); }
-        button:disabled { background-color: var(--border-color); cursor: not-allowed; color: var(--text-muted); }
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px var(--accent-glow);
+        }
+        button:active { transform: translateY(0); }
+        button:disabled { background: rgba(220, 38, 38, 0.3); cursor: not-allowed; color: var(--text-muted); transform: none; box-shadow: none; }
 
         .spinner {
             display: none;
@@ -143,14 +213,53 @@
             animation: spin 1s ease-in-out infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .page-loader { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+
+        .page-loader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        .page-loader .spinner {
+            display: block;
+            width: 40px;
+            height: 40px;
+            border-color: rgba(220, 38, 38, 0.3);
+            border-top-color: var(--accent-color);
+        }
+
         .hidden { display: none !important; }
+
+        .cancel-link {
+            color: var(--text-muted);
+            font-size: 14px;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .cancel-link:hover { color: var(--text-main); }
+
+        .secure-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            margin-top: 1.5rem;
+            justify-content: center;
+        }
     </style>
 </head>
 <body>
 
+    <div class="brand-bar">
+        <img src="/static/logo.svg" alt="APalPay">
+        <span>APalPay</span>
+    </div>
+
     <div id="page-loader" class="page-loader">
-        <div class="spinner" style="display: block; width: 40px; height: 40px;"></div>
+        <div class="spinner"></div>
         <p style="margin-top: 20px; color: var(--text-muted);">Loading secure checkout...</p>
     </div>
 
@@ -160,12 +269,17 @@
             <div id="line-items-container"></div>
             <div class="total-row">
                 <span>Total</span>
-                <span id="total-amount">$0.00</span>
+                <span class="total-amount" id="total-amount">$0.00</span>
             </div>
         </div>
 
         <div class="payment-section">
-            <h2>Authorize Payment</h2>
+            <h2>
+                <svg class="shield-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
+                </svg>
+                Authorize Payment
+            </h2>
             <div id="auth-section">
                 <div class="form-row">
                     <label>Authenticated as</label>
@@ -173,7 +287,7 @@
                 </div>
                 <div id="error-message"></div>
                 <div id="not-logged-in" class="hidden" style="text-align:center; padding: 20px 0;">
-                    <p style="color: var(--text-muted); margin-bottom: 16px;">You need to be logged in to your account to authorize this payment.</p>
+                    <p style="color: var(--text-muted); margin-bottom: 16px;">You need to be logged in to your APalPay wallet to authorize this payment.</p>
                     <button id="login-button" type="button" onclick="redirectToLogin()" style="cursor:pointer;">
                         Login to authorize
                     </button>
@@ -185,7 +299,13 @@
                     </button>
                 </form>
                 <div style="text-align: center; margin-top: 20px;">
-                    <a href="#" id="cancel-link" style="color: var(--text-muted); font-size: 14px;">Cancel and return to merchant</a>
+                    <a href="#" id="cancel-link" class="cancel-link">Cancel and return to merchant</a>
+                </div>
+                <div class="secure-badge">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                    </svg>
+                    Secured by APalPay
                 </div>
             </div>
         </div>
@@ -198,7 +318,6 @@
         const forceAuth = queryParams.get('force_auth') === '1';
         let sessionData = {};
 
-        // EGS Auth Service token management
         const EGS_TOKEN_KEY = 'egs_access_token';
         const getToken = () => localStorage.getItem(EGS_TOKEN_KEY);
 
@@ -216,7 +335,6 @@
 
         function redirectToLogin(storeReturnUrl = true, message = '') {
             if (storeReturnUrl) {
-                // Keep checkout URL only for normal unauthenticated flow.
                 localStorage.setItem('checkout_return_url', window.location.href);
             } else {
                 localStorage.removeItem('checkout_return_url');
@@ -228,8 +346,6 @@
                 localStorage.removeItem('checkout_login_error');
             }
 
-            // Redirect through the canonical wallet login route and force
-            // account selection to avoid being stuck with a previous session.
             window.location.href = '/wallet/login?force_auth=1';
         }
 
@@ -246,15 +362,15 @@
 
                 const res = await fetch(`/api/v1/checkout/${sessionId}`);
                 if (!res.ok) throw new Error('Failed to load checkout session');
-                
+
                 sessionData = await res.json();
-                
+
                 if(sessionData.status !== 'open') {
                     document.body.innerHTML = `
                         <div style="text-align:center; margin-top:100px;">
                             <h2>Checkout Session Closed</h2>
                             <p style="color:var(--text-muted)">This session is currently <b>${sessionData.status}</b>.</p>
-                            <button onclick="window.location.href='${sessionData.cancel_url || '/'}'">Go Back</button>
+                            <button onclick="window.location.href='${sessionData.cancel_url || '/'}'" style="max-width:300px; margin: 20px auto;">Go Back</button>
                         </div>`;
                     return;
                 }
@@ -272,7 +388,7 @@
                         </div>
                     `).join('');
                 }
-                
+
                 document.getElementById('total-amount').textContent = formatMoney(sessionData.amount_total, sessionData.currency);
                 document.getElementById('cancel-link').href = sessionData.cancel_url || '/';
 
@@ -327,7 +443,7 @@
                 });
 
                 const data = await res.json();
-                
+
                 if (!res.ok) {
                     throw new Error(data.detail || 'Authorization failed.');
                 }

@@ -3,25 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <title>APalPay — Sign In</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0f172a;
-            --surface-color: #1e293b;
-            --primary-color: #3b82f6;
-            --primary-hover: #2563eb;
-            --text-color: #f8fafc;
-            --text-muted: #94a3b8;
-            --border-color: #334155;
-            --error-color: #ef4444;
+            --bg-color: #1a0a0a;
+            --surface-color: rgba(40, 15, 15, 0.75);
+            --primary-color: #dc2626;
+            --primary-hover: #b91c1c;
+            --primary-glow: rgba(220, 38, 38, 0.25);
+            --text-color: #fef2f2;
+            --text-muted: #fca5a5;
+            --border-color: rgba(220, 38, 38, 0.25);
+            --input-bg: rgba(15, 5, 5, 0.6);
+            --error-color: #fbbf24;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
             font-family: 'Inter', sans-serif;
-            background-color: var(--bg-color);
+            background: var(--bg-color);
+            background-image:
+                radial-gradient(ellipse at 20% 50%, rgba(220, 38, 38, 0.12) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 20%, rgba(185, 28, 28, 0.08) 0%, transparent 50%);
             color: var(--text-color);
             display: flex;
             justify-content: center;
@@ -30,46 +35,86 @@
         }
 
         .container {
-            background-color: var(--surface-color);
+            background: var(--surface-color);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
             padding: 2.5rem;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            border-radius: 16px;
+            box-shadow:
+                0 0 0 1px var(--border-color),
+                0 20px 50px rgba(0, 0, 0, 0.6),
+                0 0 80px var(--primary-glow);
             width: 100%;
-            max-width: 400px;
+            max-width: 420px;
+            animation: fadeIn 0.5s ease-out;
         }
 
-        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; font-weight: 600; text-align: center; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .logo-area {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .logo-area img {
+            width: 80px;
+            height: auto;
+            border-radius: 12px;
+            margin-bottom: 0.75rem;
+        }
+
+        .brand-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            letter-spacing: -0.5px;
+        }
+
+        h1 { font-size: 1.25rem; margin-bottom: 0.25rem; font-weight: 600; text-align: center; }
         p.subtitle { color: var(--text-muted); text-align: center; margin-bottom: 2rem; font-size: 0.875rem; }
 
         .form-group { margin-bottom: 1.25rem; }
-        label { display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500; }
+        label { display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 500; color: var(--text-muted); }
 
         input {
             width: 100%;
             padding: 0.75rem 1rem;
-            border-radius: 6px;
+            border-radius: 8px;
             border: 1px solid var(--border-color);
-            background-color: var(--bg-color);
+            background-color: var(--input-bg);
             color: var(--text-color);
             font-size: 1rem;
-            transition: border-color 0.2s;
+            font-family: 'Inter', sans-serif;
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
-        input:focus { outline: none; border-color: var(--primary-color); }
+        input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px var(--primary-glow);
+        }
 
         button {
             width: 100%;
             padding: 0.875rem;
             border: none;
-            border-radius: 6px;
-            background-color: var(--primary-color);
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--primary-color), #991b1b);
             color: white;
             font-size: 1rem;
-            font-weight: 500;
+            font-weight: 600;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: transform 0.15s, box-shadow 0.2s;
             margin-top: 1rem;
+            font-family: 'Inter', sans-serif;
         }
-        button:hover { background-color: var(--primary-hover); }
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px var(--primary-glow);
+        }
+        button:active { transform: translateY(0); }
 
         .error { color: var(--error-color); font-size: 0.875rem; margin-top: 0.5rem; display: none; }
 
@@ -79,15 +124,28 @@
             font-size: 0.875rem;
             color: var(--text-muted);
         }
-        .link-row a { color: var(--primary-color); text-decoration: none; }
+        .link-row a { color: var(--primary-color); text-decoration: none; font-weight: 500; }
         .link-row a:hover { text-decoration: underline; }
+
+        .divider {
+            height: 1px;
+            background: var(--border-color);
+            margin: 1.5rem 0;
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
+    <div class="logo-area">
+        <img src="/static/logo.svg" alt="APalPay Logo">
+        <div class="brand-name">APalPay</div>
+    </div>
+
+    <div class="divider"></div>
+
     <h1>Welcome Back</h1>
-    <p class="subtitle">Sign in to your account.</p>
+    <p class="subtitle">Sign in to your wallet.</p>
 
     <form id="login-form">
         <div class="form-group">
@@ -169,7 +227,6 @@
         btn.disabled = true;
 
         try {
-            // Authenticate directly with the EGS Auth Service.
             const resp = await fetch(`${AUTH_SERVICE_BASE}/api/v1/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -182,10 +239,8 @@
                 throw new Error(data.detail || 'Login failed');
             }
 
-            // Store the token
             localStorage.setItem(EGS_TOKEN_KEY, data.access_token);
 
-            // Redirect
             const returnUrl = localStorage.getItem('checkout_return_url');
             if (returnUrl) {
                 localStorage.removeItem('checkout_return_url');
