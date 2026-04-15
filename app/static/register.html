@@ -178,7 +178,7 @@
 
 <script>
     const EGS_TOKEN_KEY = 'egs_access_token';
-    const AUTH_SERVICE_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+    const AUTH_SERVICE_BASE = `${window.location.protocol}//${window.location.hostname}:8005`;
     const searchParams = new URLSearchParams(window.location.search);
     const forceAuth = searchParams.get('force_auth') === '1';
 
@@ -233,6 +233,8 @@
             const registerData = await registerResp.json();
 
             if (!registerResp.ok) {
+                // If it fails with "Email already registered" because they are
+                // creating an account on the new Auth service DB, show error
                 throw new Error(registerData.detail || 'Registration failed');
             }
 
