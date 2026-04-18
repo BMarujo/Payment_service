@@ -23,6 +23,7 @@ from app.schemas.checkout import (
     CheckoutAuthorizeResponse,
 )
 from app.utils.exceptions import NotFoundError
+from app.metrics import record_checkout, record_payment
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,8 @@ async def create_checkout_session(
     # Generate local checkout URL
     base_url = str(request.base_url).rstrip("/")
     checkout_url = f"{base_url}/checkout/{session.id}"
+
+    record_checkout("created")
 
     return CheckoutSessionResponse(
         session_id=str(session.id),
@@ -197,6 +200,9 @@ async def authorize_checkout_session(
     session.status = "complete"
     db.add(session)
     await db.commit()
+
+    record_checkout("complete")
+    record_payment("succeeded", payment.amount, payment.currency)
     
     return CheckoutAuthorizeResponse(
         status="succeeded",

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.payment import Payment, PaymentStatus
 from app.schemas.payment import PaymentCreate, PaymentResponse, PaymentListResponse
 from app.utils.exceptions import NotFoundError, PaymentError
+from app.metrics import record_payment, record_refund
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class PaymentService:
         await db.refresh(payment)
 
         logger.info(f"Payment created: {payment.id} status={payment.status}")
+        record_payment("pending", payment.amount, payment.currency)
         return self._to_response(payment)
 
     async def get_payment(self, db: AsyncSession, payment_id: uuid.UUID) -> PaymentResponse:
@@ -116,6 +118,7 @@ class PaymentService:
         await db.refresh(payment)
 
         logger.info(f"Payment confirmed: {payment.id} new_status={payment.status}")
+        record_payment("succeeded", payment.amount, payment.currency)
         return self._to_response(payment)
 
     async def cancel_or_refund_payment(
@@ -138,6 +141,7 @@ class PaymentService:
             # ── Cancel path ──
             payment.status = PaymentStatus.CANCELED
             logger.info(f"Payment canceled: {payment.id}")
+            record_payment("canceled", payment.amount, payment.currency)
 
         elif payment.status in (PaymentStatus.SUCCEEDED, PaymentStatus.PARTIALLY_REFUNDED):
             # ── Refund path ──
@@ -148,6 +152,8 @@ class PaymentService:
             payment.amount_refunded = payment.amount
             payment.status = PaymentStatus.REFUNDED
             logger.info(f"Payment refunded: {payment.id} amount={refund_amount}")
+            record_payment("refunded", payment.amount, payment.currency)
+            record_refund(refund_amount, payment.currency)
 
         elif payment.status == PaymentStatus.REFUNDED:
             logger.info(f"Payment {payment.id} already refunded, returning current state")

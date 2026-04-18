@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     rate_limit_requests: int = Field(default=100)
     rate_limit_window_seconds: int = Field(default=60)
 
+    # ── OpenTelemetry ────────────────────────
+    otel_enabled: bool = Field(default=True)
+    otel_service_name: str = Field(default="payment-service")
+    otel_exporter_otlp_endpoint: str = Field(default="http://otel-collector:4317")
+
     # ── Logging ──────────────────────────────
     log_level: str = Field(default="INFO")
 

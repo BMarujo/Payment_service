@@ -22,7 +22,8 @@ A **production-ready payment microservice** built with FastAPI, designed for mic
 | **Correlation IDs** | `X-Correlation-ID` header on every request/response |
 | **RFC 7807 Errors** | Standardized Problem Details error responses |
 | **Structured Logging** | JSON-formatted logs with correlation IDs |
-| **Dockerized** | Docker Compose setup with PostgreSQL and Redis |
+| **Observability** | OpenTelemetry tracing + metrics, Grafana KPI dashboards, Jaeger traces |
+| **Dockerized** | Docker Compose setup with PostgreSQL, Redis, and observability stack |
 
 ---
 
@@ -279,12 +280,13 @@ Payment_service/
 │   ├── main.py                 # FastAPI app factory
 │   ├── config.py               # Pydantic settings
 │   ├── database.py             # Async SQLAlchemy setup
+│   ├── telemetry.py            # OpenTelemetry setup & auto-instrumentation
+│   ├── metrics.py              # Business KPI metric definitions
 │   ├── models/                 # SQLAlchemy ORM models
 │   ├── schemas/                # Pydantic request/response schemas
 │   ├── api/v1/                 # API endpoints
 │   │   ├── router.py
 │   │   ├── payments.py
-│   │   ├── refunds.py
 │   │   ├── customers.py
 │   │   ├── checkout.py
 │   │   ├── api_keys.py
@@ -299,13 +301,72 @@ Payment_service/
 │   ├── static/                 # Frontend HTML pages
 │   │   ├── checkout.html
 │   │   ├── login.html
+│   │   ├── register.html
 │   │   └── dashboard.html
 │   └── utils/
 │       ├── exceptions.py
 │       └── logging.py
+├── observability/              # Observability stack config
+│   ├── otel-collector-config.yaml
+│   ├── prometheus.yml
+│   └── grafana/
+│       ├── provisioning/       # Auto-configured datasources & dashboard providers
+│       └── dashboards/         # Pre-built Grafana dashboard JSON
 ├── test_all_endpoints.sh       # End-to-end integration test
 └── api_workflow.txt            # Manual API workflow reference
 ```
+
+---
+
+## Observability & KPIs
+
+The service includes a full observability stack powered by **OpenTelemetry**.
+
+### Dashboards & Tools
+
+| Tool | URL | Purpose |
+|------|-----|--------|
+| **Grafana** | `http://localhost:3000` | KPI dashboards (login: `admin` / `admin`) |
+| **Jaeger** | `http://localhost:16686` | Distributed trace explorer |
+| **Prometheus** | `http://localhost:9090` | Raw metrics queries |
+
+### Business KPIs (tracked automatically)
+
+| KPI | Description |
+|-----|-------------|
+| Payment Volume | Total money processed, by currency |
+| Transaction Count | Payments by status (succeeded / failed / canceled) |
+| Success Rate | Percentage of succeeded payments |
+| Refund Rate | Number and volume of refunds |
+| Checkout Conversion | Sessions created vs completed |
+| Customer Registrations | New customer sign-ups over time |
+
+### Operational KPIs
+
+| KPI | Description |
+|-----|-------------|
+| Request Latency | p50 / p95 / p99 response times |
+| Error Rate | 4xx and 5xx responses per minute |
+| EGS Auth Latency | External auth service call duration |
+| Rate Limit Hits | Requests rejected by rate limiter |
+
+### Distributed Tracing
+
+Every request is traced end-to-end across:
+- **FastAPI** HTTP handler
+- **SQLAlchemy** database queries
+- **Redis** cache operations
+- **httpx** outgoing calls to EGS Auth Service
+
+Open **Jaeger** at `http://localhost:16686`, select service `payment-service`, and explore traces.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTEL_ENABLED` | `true` | Set to `false` to disable telemetry |
+| `OTEL_SERVICE_NAME` | `payment-service` | Service name in traces |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-collector:4317` | OTel Collector gRPC endpoint |
 
 ---
 

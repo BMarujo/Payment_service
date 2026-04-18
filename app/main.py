@@ -20,6 +20,8 @@ from app.middleware.rate_limiter import rate_limiter
 from app.services.api_key_service import api_key_service
 from app.utils.exceptions import register_exception_handlers, AuthenticationError, RateLimitError
 from app.utils.logging import setup_logging, generate_correlation_id, correlation_id_ctx
+from app.telemetry import setup_telemetry, shutdown_telemetry
+from app.metrics import record_rate_limit_exceeded
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down...")
+    shutdown_telemetry()
     await idempotency_service.close()
     await rate_limiter.close()
     await api_key_service.close()
@@ -260,6 +263,7 @@ def create_app() -> FastAPI:
                 window_seconds=rl_window,
             )
             if not allowed:
+                record_rate_limit_exceeded(raw_key)
                 response = JSONResponse(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     content={
@@ -292,6 +296,9 @@ def create_app() -> FastAPI:
     # ── Routers ──────────────────────────────────────
     app.include_router(health_router)
     app.include_router(v1_router)
+
+    # ── OpenTelemetry (must come after routers are added) ──
+    setup_telemetry(app)
 
     # ── Static Files & Frontend ──────────────────────
     import os

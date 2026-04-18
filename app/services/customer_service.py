@@ -17,6 +17,7 @@ from app.schemas.customer import (
     CustomerListResponse,
 )
 from app.utils.exceptions import NotFoundError
+from app.metrics import record_customer_registered
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class CustomerService:
         await db.refresh(customer)
 
         logger.info(f"Customer created: {customer.id}")
+        record_customer_registered()
         return self._to_response(customer)
 
     async def get_customer(

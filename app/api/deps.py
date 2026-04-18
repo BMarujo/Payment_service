@@ -12,6 +12,7 @@ from sqlalchemy.future import select
 from app.database import get_db
 from app.models.customer import Customer
 from app.services.auth_client import verify_token_with_auth_service
+from app.metrics import record_customer_registered
 
 logger = logging.getLogger(__name__)
 security = HTTPBearer()
@@ -56,5 +57,6 @@ async def get_current_customer(
         await db.flush()
         await db.refresh(customer)
         logger.info("Auto-provisioned wallet customer for %s", verified.email)
+        record_customer_registered()
 
     return customer

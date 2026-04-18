@@ -25,12 +25,21 @@ reportlab==4.2.5
 httpx==0.28.1
 
 
-
 # Logging
 python-json-logger==3.2.1
+
+# OpenTelemetry — Core
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp==1.29.0
+
+# OpenTelemetry — Auto-instrumentation
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-sqlalchemy==0.50b0
+opentelemetry-instrumentation-redis==0.50b0
+opentelemetry-instrumentation-httpx==0.50b0
 
 # Testing
 pytest==8.3.4
 pytest-asyncio==0.25.0
 pytest-cov==6.0.0
-
