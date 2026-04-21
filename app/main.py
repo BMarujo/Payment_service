@@ -305,23 +305,34 @@ def create_app() -> FastAPI:
     os.makedirs("app/static", exist_ok=True)
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
+    def _wallet_file_response(path: str) -> FileResponse:
+        # Prevent stale browser cache from serving outdated auth endpoints.
+        return FileResponse(
+            path,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
     # ── HTML pages (served directly, hidden from API docs) ──
     @app.get("/wallet/register", include_in_schema=False)
     async def render_register(request: Request):
-        return FileResponse("app/static/register.html")
+        return _wallet_file_response("app/static/register.html")
 
     @app.get("/wallet/login", include_in_schema=False)
     async def render_login(request: Request):
-        return FileResponse("app/static/login.html")
+        return _wallet_file_response("app/static/login.html")
 
     @app.get("/wallet/dashboard", include_in_schema=False)
     async def render_dashboard(request: Request):
-        return FileResponse("app/static/dashboard.html")
+        return _wallet_file_response("app/static/dashboard.html")
 
     @app.get("/checkout/{session_id}", summary="Hosted Checkout UI", include_in_schema=False)
     async def render_checkout(session_id: str):
         """Serve the hosted checkout HTML page."""
-        return FileResponse("app/static/checkout.html")
+        return _wallet_file_response("app/static/checkout.html")
 
     return app
 
