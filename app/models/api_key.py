@@ -35,7 +35,7 @@ class ApiKey(Base):
     description = Column(Text, nullable=True)
 
     # Access control — list of allowed scopes
-    # e.g., ["payments:read", "payments:write", "refunds:read", "refunds:write"]
+    # e.g., ["payments:read", "payments:write", "customers:read", "customers:write"]
     # Empty list or null = all scopes allowed
     scopes = Column(JSONB, nullable=True, default=list)
 

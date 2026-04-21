@@ -7,52 +7,52 @@
   "links": [],
   "panels": [
     {
-      "title": "Payment Volume (per minute)",
+      "title": "Payment Volume (per chart bucket)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "fillOpacity": 20, "lineWidth": 2 },
-          "unit": "currencyUSD"
+          "unit": "short"
         },
         "overrides": []
       },
       "targets": [
         {
-          "expr": "rate(payment_service_payment_amount_cents_total[5m]) * 60 / 100",
+          "expr": "sum by (currency) (increase(payment_service_payment_amount_cents_total[$__interval])) / 100",
           "legendFormat": "{{currency}}",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Transactions (per minute)",
+      "title": "Payment Outcomes (per chart bucket)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "fillOpacity": 10, "lineWidth": 2 },
-          "unit": "ops"
+          "unit": "short"
         },
         "overrides": []
       },
       "targets": [
         {
-          "expr": "rate(payment_service_payment_transactions_total[5m]) * 60",
+          "expr": "sum by (status) (increase(payment_service_payment_transactions_total{status=~\"succeeded|failed|canceled\"}[$__interval]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Payment Success Rate",
+      "title": "Payment Success Rate (overall)",
       "type": "gauge",
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -70,16 +70,16 @@
       },
       "targets": [
         {
-          "expr": "sum(payment_service_payment_transactions_total{status=\"succeeded\"}) / sum(payment_service_payment_transactions_total) * 100",
+          "expr": "100 * sum(payment_service_payment_transactions_total{status=\"succeeded\"}) / clamp_min(sum(payment_service_payment_transactions_total{status=~\"succeeded|failed|canceled\"}), 1)",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Checkout Conversion",
+      "title": "Checkout Conversion (overall)",
       "type": "gauge",
       "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -97,16 +97,16 @@
       },
       "targets": [
         {
-          "expr": "sum(payment_service_checkout_sessions_total{status=\"complete\"}) / sum(payment_service_checkout_sessions_total) * 100",
+          "expr": "100 * sum(payment_service_checkout_sessions_total{status=\"complete\"}) / clamp_min(sum(payment_service_checkout_sessions_total{status=\"created\"}), 1)",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Refunds (total)",
+      "title": "Refunds Issued (selected range)",
       "type": "stat",
       "gridPos": { "h": 6, "w": 6, "x": 12, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -116,17 +116,17 @@
       },
       "targets": [
         {
-          "expr": "payment_service_payment_refunds_total",
+          "expr": "sum(increase(payment_service_payment_refunds_total[$__range])) or on() vector(0)",
           "legendFormat": "Refunds",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Customers Registered",
+      "title": "New Customers (selected range)",
       "type": "stat",
       "gridPos": { "h": 6, "w": 6, "x": 18, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -136,7 +136,7 @@
       },
       "targets": [
         {
-          "expr": "payment_service_customers_registered_total",
+          "expr": "sum(increase(payment_service_customers_registered_total[$__range])) or on() vector(0)",
           "legendFormat": "Total",
           "refId": "A"
         }
@@ -146,7 +146,7 @@
       "title": "HTTP Request Latency (p50 / p95 / p99)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -157,27 +157,27 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(payment_service_http_server_duration_milliseconds_bucket[5m])) / 1000",
+          "expr": "histogram_quantile(0.50, sum(rate(payment_service_http_server_duration_milliseconds_bucket[5m])) by (le)) / 1000",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, rate(payment_service_http_server_duration_milliseconds_bucket[5m])) / 1000",
+          "expr": "histogram_quantile(0.95, sum(rate(payment_service_http_server_duration_milliseconds_bucket[5m])) by (le)) / 1000",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, rate(payment_service_http_server_duration_milliseconds_bucket[5m])) / 1000",
+          "expr": "histogram_quantile(0.99, sum(rate(payment_service_http_server_duration_milliseconds_bucket[5m])) by (le)) / 1000",
           "legendFormat": "p99",
           "refId": "C"
         }
       ]
     },
     {
-      "title": "EGS Auth Service Latency",
+      "title": "EGS Auth Avg Latency",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -188,80 +188,64 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(payment_service_auth_service_request_duration_seconds_bucket[5m]))",
-          "legendFormat": "p50",
+          "expr": "sum(rate(payment_service_auth_service_request_duration_seconds_sum[$__rate_interval])) / clamp_min(sum(rate(payment_service_auth_service_request_duration_seconds_count[$__rate_interval])), 1e-9)",
+          "legendFormat": "avg",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(payment_service_auth_service_request_duration_seconds_bucket[5m]))",
-          "legendFormat": "p95",
-          "refId": "B"
         }
       ]
     },
     {
-      "title": "HTTP Error Rate (4xx / 5xx per minute)",
+      "title": "HTTP Errors (per chart bucket)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "fillOpacity": 20, "lineWidth": 2 },
-          "unit": "ops"
+          "unit": "short"
         },
         "overrides": []
       },
       "targets": [
         {
-          "expr": "rate(payment_service_http_server_duration_milliseconds_count{http_status_code=~\"4..\"}[5m]) * 60",
+          "expr": "sum(increase(payment_service_http_server_duration_milliseconds_count{http_status_code=~\"4..\"}[$__interval])) or on() vector(0)",
           "legendFormat": "4xx",
           "refId": "A"
         },
         {
-          "expr": "rate(payment_service_http_server_duration_milliseconds_count{http_status_code=~\"5..\"}[5m]) * 60",
+          "expr": "sum(increase(payment_service_http_server_duration_milliseconds_count{http_status_code=~\"5..\"}[$__interval])) or on() vector(0)",
           "legendFormat": "5xx",
           "refId": "B"
         }
       ]
     },
     {
-      "title": "Rate Limit Rejections",
+      "title": "Rate Limit Rejections (per chart bucket)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "fixedColor": "orange", "mode": "fixed" },
           "custom": { "fillOpacity": 20, "lineWidth": 2 },
-          "unit": "ops"
+          "unit": "short"
         },
         "overrides": []
       },
       "targets": [
         {
-          "expr": "rate(payment_service_rate_limit_exceeded_total[5m]) * 60",
+          "expr": "sum(increase(payment_service_rate_limit_exceeded_total[$__interval])) or on() vector(0)",
           "legendFormat": "Rate Limited",
           "refId": "A"
         }
       ]
     }
   ],
+  "refresh": "5s",
   "schemaVersion": 39,
   "tags": ["payment-service", "kpi"],
-  "templating": {
-    "list": [
-      {
-        "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
-        "hide": 0,
-        "includeAll": false,
-        "label": "Prometheus",
-        "name": "DS_PROMETHEUS",
-        "query": "prometheus",
-        "type": "datasource"
-      }
-    ]
-  },
+  "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
   "title": "Payment Service KPIs",
   "uid": "payment-service-kpis",

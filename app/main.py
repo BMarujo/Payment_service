@@ -132,7 +132,7 @@ def create_app() -> FastAPI:
                 "description": (
                     "Enter your API key. Use the **admin key** (from ADMIN_API_KEY env var) "
                     "for `/api/v1/admin/*` endpoints, or a **tenant key** (ps_live_...) "
-                    "for payment/refund/customer operations."
+                    "for payment/customer operations."
                 ),
             }
         }

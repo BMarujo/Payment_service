@@ -23,7 +23,7 @@ from app.schemas.checkout import (
     CheckoutAuthorizeResponse,
 )
 from app.utils.exceptions import NotFoundError
-from app.metrics import record_checkout, record_payment
+from app.metrics import record_checkout, record_customer_registered, record_payment
 
 logger = logging.getLogger(__name__)
 
@@ -160,11 +160,13 @@ async def authorize_checkout_session(
     # 4. Resolve/create local customer for the authenticated payer.
     cust_res = await db.execute(select(Customer).where(Customer.email == verified.email))
     customer = cust_res.scalar_one_or_none()
+    created_customer = False
     if customer is None:
         customer = Customer(email=verified.email, is_active=True)
         db.add(customer)
         await db.flush()
         await db.refresh(customer)
+        created_customer = True
 
     # Bind session ownership to the authenticated payer at authorization time.
     session.customer_id = customer.id
@@ -200,6 +202,9 @@ async def authorize_checkout_session(
     session.status = "complete"
     db.add(session)
     await db.commit()
+
+    if created_customer:
+        record_customer_registered()
 
     record_checkout("complete")
     record_payment("succeeded", payment.amount, payment.currency)

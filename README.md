@@ -11,7 +11,7 @@ A **production-ready payment microservice** built with FastAPI, designed for mic
 | **External Auth (EGS)** | Token verification delegated to the EGS Auth Service via `/verify` |
 | **Hosted Checkout** | Checkout flow with Bearer token authorization via EGS |
 | **Payments** | Full payment lifecycle — create, confirm, cancel, refund |
-| **Refunds** | Full and partial refunds with reason tracking |
+| **Refunds** | Automatic full refund when canceling a succeeded payment |
 | **Customer Management** | CRUD for payment service customer records |
 | **PDF Receipts** | Auto-generated professional PDF receipts |
 | **Multi-Tenant API Keys** | Database-backed API key management with SHA-256 hashing |
@@ -40,7 +40,8 @@ A **production-ready payment microservice** built with FastAPI, designed for mic
 │  │  • /login        │                  │  • /payments          │  │
 │  │  • /verify       │                  │  • /customers         │  │
 │  │  • /logout       │                  │  • /admin/api-keys    │  │
-│  │  • /me           │                  │  • /refunds           │  │
+│  │  • /me           │                  │  • auto-refund via    │  │
+│  │                  │                  │    DELETE /payments/{id} │  │
 │  └────────┬─────────┘                  └────────┬─────────────┘  │
 │           │                                      │                │
 │  ┌────────▼─────────┐                  ┌────────▼─────────────┐  │
@@ -106,6 +107,14 @@ The response includes a `raw_key` field (e.g., `ps_live_a1b2c3d4...`). **Save it
 - **Swagger UI**: [http://localhost:8001/docs](http://localhost:8001/docs)
 - **ReDoc**: [http://localhost:8001/redoc](http://localhost:8001/redoc)
 
+### 4.1 Run the bundled verification
+
+```bash
+bash test_all_endpoints.sh
+```
+
+The smoke test validates the full API flow and waits for the main Prometheus KPI queries used by Grafana to populate.
+
 ### 5. UI URLs (not API endpoints)
 
 These are static UI pages/URLs for browser navigation. They are **not** API endpoints and are intentionally hidden from OpenAPI docs.
@@ -141,7 +150,7 @@ Authentication is handled by the **external EGS Auth Service**:
 
 Set via `ADMIN_API_KEY` in `.env`. This key can:
 - Create, list, update, and revoke tenant API keys
-- Access all payment/refund/customer endpoints
+- Access all payment/customer endpoints
 
 ### Tenant Keys (per-client)
 
@@ -193,7 +202,7 @@ Created via the admin endpoints. Each key:
 
 ### Refunds
 
-Refunds are handled automatically by `DELETE /api/v1/payments/{id}` — if the payment has succeeded, it issues a full refund. For partial refunds, use `POST /api/v1/payments/{id}/refund`.
+Refunds are handled automatically by `DELETE /api/v1/payments/{id}` — if the payment has succeeded, it issues a full refund.
 
 ### Admin
 
@@ -228,6 +237,10 @@ Refunds are handled automatically by `DELETE /api/v1/payments/{id}` — if the p
 | `REDIS_URL` | — | Redis connection URL |
 | `RATE_LIMIT_REQUESTS` | 100 | Default max requests per window |
 | `RATE_LIMIT_WINDOW_SECONDS` | 60 | Default rate limit window |
+| `OTEL_ENABLED` | true | Enable tracing and metrics |
+| `OTEL_SERVICE_NAME` | payment-service | Telemetry service name |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-collector:4317` | OTel Collector gRPC endpoint |
+| `OTEL_METRIC_EXPORT_INTERVAL_MS` | 5000 | How often the app flushes metrics to OTel |
 | `LOG_LEVEL` | INFO | Logging level |
 
 ---
@@ -294,7 +307,6 @@ Payment_service/
 │   ├── services/               # Business logic
 │   │   ├── auth_client.py      # EGS Auth /verify client
 │   │   ├── payment_service.py
-│   │   ├── refund_service.py
 │   │   ├── customer_service.py
 │   │   ├── receipt_service.py
 │   │   └── api_key_service.py
@@ -329,6 +341,9 @@ The service includes a full observability stack powered by **OpenTelemetry**.
 | **Grafana** | `http://localhost:3000` | KPI dashboards (login: `admin` / `admin`) |
 | **Jaeger** | `http://localhost:16686` | Distributed trace explorer |
 | **Prometheus** | `http://localhost:9090` | Raw metrics queries |
+
+After running `test_all_endpoints.sh`, the KPI panels should populate within about 10-15 seconds with the default local configuration.
+The dashboard uses windowed KPIs: line charts show per-bucket totals across the visible range, while gauges and stat panels summarize the currently selected time range.
 
 ### Business KPIs (tracked automatically)
 
@@ -367,6 +382,7 @@ Open **Jaeger** at `http://localhost:16686`, select service `payment-service`, a
 | `OTEL_ENABLED` | `true` | Set to `false` to disable telemetry |
 | `OTEL_SERVICE_NAME` | `payment-service` | Service name in traces |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-collector:4317` | OTel Collector gRPC endpoint |
+| `OTEL_METRIC_EXPORT_INTERVAL_MS` | `5000` | Metric flush interval from the app to the collector |
 
 ---
 

@@ -761,8 +761,7 @@ components:
           - type: 'null'
           title: Scopes
           description: 'List of allowed scopes. If empty/null, all scopes are allowed.
-            Available scopes: payments:read, payments:write, refunds:read, refunds:write,
-            customers:read, customers:write'
+            Available scopes: payments:read, payments:write, customers:read, customers:write'
         rate_limit_requests:
           anyOf:
           - type: integer
@@ -1088,16 +1087,17 @@ components:
           title: Cancel Url
           description: URL to redirect the customer if they cancel the checkout.
         customer_email:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Customer Email
-          description: Email of the customer. If they don't exist in the Payment Service,
-            a new identity will be created automatically.
+          description: Optional customer email hint (legacy compatibility)
         customer_name:
           anyOf:
           - type: string
           - type: 'null'
           title: Customer Name
-          description: Name of the customer (used if creating a new identity)
+          description: Optional customer name hint shown on checkout UI
         metadata:
           anyOf:
           - type: object
@@ -1109,7 +1109,6 @@ components:
       - line_items
       - success_url
       - cancel_url
-      - customer_email
       title: CheckoutSessionCreate
       description: 'Request body to create a hosted checkout session.
 
@@ -1178,11 +1177,15 @@ components:
           title: Currency
           description: ISO 4217 currency code
         customer_name:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Customer Name
           description: Customer name
         customer_email:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Customer Email
           description: Customer email
         metadata:
@@ -1202,8 +1205,6 @@ components:
       - payment_status
       - amount_total
       - currency
-      - customer_name
-      - customer_email
       title: CheckoutSessionResponse
       description: 'Response after creating a checkout session.
 
@@ -1520,7 +1521,7 @@ components:
       name: X-API-Key
       description: Enter your API key. Use the **admin key** (from ADMIN_API_KEY env
         var) for `/api/v1/admin/*` endpoints, or a **tenant key** (ps_live_...) for
-        payment/refund/customer operations.
+        payment/customer operations.
 tags:
 - name: Checkout
   description: '**Start here.** Create a hosted checkout session and redirect the

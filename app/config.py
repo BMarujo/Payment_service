@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     otel_enabled: bool = Field(default=True)
     otel_service_name: str = Field(default="payment-service")
     otel_exporter_otlp_endpoint: str = Field(default="http://otel-collector:4317")
+    otel_metric_export_interval_ms: int = Field(default=5000)
 
     # ── Logging ──────────────────────────────
     log_level: str = Field(default="INFO")

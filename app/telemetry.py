@@ -55,7 +55,10 @@ def setup_telemetry(app) -> None:
 
         # ── Metrics ──
         metric_exporter = OTLPMetricExporter(endpoint=settings.otel_exporter_otlp_endpoint, insecure=True)
-        metric_reader = PeriodicExportingMetricReader(metric_exporter, export_interval_millis=15000)
+        metric_reader = PeriodicExportingMetricReader(
+            metric_exporter,
+            export_interval_millis=settings.otel_metric_export_interval_ms,
+        )
         _meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
         metrics.set_meter_provider(_meter_provider)
 
@@ -80,8 +83,9 @@ def setup_telemetry(app) -> None:
             logger.warning(f"Redis instrumentation skipped: {e}")
 
         logger.info(
-            "OpenTelemetry initialised — exporting to %s",
+            "OpenTelemetry initialised — exporting to %s (metrics every %sms)",
             settings.otel_exporter_otlp_endpoint,
+            settings.otel_metric_export_interval_ms,
         )
 
     except ImportError as e:

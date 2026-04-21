@@ -17,8 +17,7 @@ class ApiKeyCreate(BaseModel):
         default=None,
         description=(
             "List of allowed scopes. If empty/null, all scopes are allowed. "
-            "Available scopes: payments:read, payments:write, refunds:read, "
-            "refunds:write, customers:read, customers:write"
+            "Available scopes: payments:read, payments:write, customers:read, customers:write"
         ),
     )
     rate_limit_requests: Optional[int] = Field(

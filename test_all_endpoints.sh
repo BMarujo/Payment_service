@@ -11,6 +11,8 @@ set -e
 
 PAYMENT_BASE="http://localhost:8001"
 AUTH_BASE="http://localhost:8000"
+PROM_BASE="${PROM_BASE:-http://localhost:9090}"
+GRAFANA_BASE="${GRAFANA_BASE:-http://localhost:3000}"
 ADMIN_KEY="${ADMIN_API_KEY:-your-admin-api-key-here}"
 TEST_EMAIL="test_user_$RANDOM@example.com"
 MERCHANT_CUSTOMER_EMAIL="merchant_customer_$RANDOM@example.com"
@@ -29,6 +31,35 @@ NC='\033[0m'
 fail() {
   echo -e "${RED}$1${NC}"
   exit 1
+}
+
+prom_query() {
+  local query="$1"
+  curl -sG "$PROM_BASE/api/v1/query" --data-urlencode "query=$query"
+}
+
+wait_for_prom_results() {
+  local label="$1"
+  local query="$2"
+  local timeout="${3:-45}"
+  local interval=5
+  local elapsed=0
+
+  while [ "$elapsed" -lt "$timeout" ]; do
+    local resp
+    local count
+    resp=$(prom_query "$query")
+    count=$(echo "$resp" | python3 -c "import sys, json; data=json.load(sys.stdin); print(len(data.get('data', {}).get('result', [])))" 2>/dev/null || echo 0)
+
+    if [ "$count" -gt 0 ]; then
+      return 0
+    fi
+
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
+
+  fail "Prometheus never returned data for ${label} within ${timeout}s"
 }
 
 echo -e "${BLUE}=== 1. ADMIN: API KEY ===${NC}"
@@ -258,6 +289,28 @@ if echo "$OPENAPI_JSON" | grep -q 'Checkout UI'; then
   fail "OpenAPI still exposes Checkout UI tag"
 fi
 
+echo "  OK"
+
+echo -e "\n${BLUE}=== 10. OBSERVABILITY ===${NC}"
+
+echo ">> 10.1 Grafana dashboard is provisioned"
+curl -sf -u admin:admin "$GRAFANA_BASE/api/dashboards/uid/payment-service-kpis" > /dev/null || fail "Grafana dashboard is missing"
+echo "  OK"
+
+echo ">> 10.2 Payment volume KPI reaches Prometheus"
+wait_for_prom_results "payment volume KPI" 'sum by (currency) (increase(payment_service_payment_amount_cents_total[15m])) / 100'
+echo "  OK"
+
+echo ">> 10.3 Transactions KPI reaches Prometheus"
+wait_for_prom_results "transactions KPI" 'sum by (status) (increase(payment_service_payment_transactions_total{status=~"succeeded|failed|canceled"}[15m]))'
+echo "  OK"
+
+echo ">> 10.4 Payment success rate KPI reaches Prometheus"
+wait_for_prom_results "payment success rate KPI" '100 * sum(payment_service_payment_transactions_total{status="succeeded"}) / clamp_min(sum(payment_service_payment_transactions_total{status=~"succeeded|failed|canceled"}), 1)'
+echo "  OK"
+
+echo ">> 10.5 Checkout conversion KPI reaches Prometheus"
+wait_for_prom_results "checkout conversion KPI" '100 * sum(payment_service_checkout_sessions_total{status="complete"}) / clamp_min(sum(payment_service_checkout_sessions_total{status="created"}), 1)'
 echo "  OK"
 
 echo -e "\n${GREEN}======================================================"
