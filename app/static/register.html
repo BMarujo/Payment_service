@@ -203,9 +203,14 @@
         localStorage.removeItem(EGS_TOKEN_KEY);
     }
 
-    // If already logged in, go to dashboard
+    // If already logged in, redirect
     if (!forceAuth && localStorage.getItem(EGS_TOKEN_KEY)) {
-        window.location.href = '/wallet/dashboard';
+        const queryReturnUrl = searchParams.get('returnUrl');
+        if (queryReturnUrl) {
+            window.location.href = queryReturnUrl;
+        } else {
+            window.location.href = '/wallet/dashboard';
+        }
     }
 
     document.getElementById('register-form').addEventListener('submit', async (e) => {
