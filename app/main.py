@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.health import router as health_router
+from app.api.v1.kpi import router as kpi_router
 from app.api.v1.router import router as v1_router
 from app.config import get_settings
 from app.database import engine, Base, get_db
@@ -295,6 +296,7 @@ def create_app() -> FastAPI:
 
     # ── Routers ──────────────────────────────────────
     app.include_router(health_router)
+    app.include_router(kpi_router)
     app.include_router(v1_router)
 
     # ── OpenTelemetry (must come after routers are added) ──
