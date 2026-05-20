@@ -312,6 +312,9 @@
     </div>
 
     <script>
+        const PAYMENT_BASE_PATH = window.location.pathname.startsWith('/payment/') ? '/payment' : '';
+        const PAYMENT_API_BASE = `${PAYMENT_BASE_PATH}/api/v1`;
+        const WALLET_BASE = `${PAYMENT_BASE_PATH}/wallet`;
         const pathParts = window.location.pathname.split('/');
         const sessionId = pathParts[pathParts.length - 1];
         const queryParams = new URLSearchParams(window.location.search);
@@ -346,7 +349,7 @@
                 localStorage.removeItem('checkout_login_error');
             }
 
-            window.location.href = '/wallet/login?force_auth=1';
+            window.location.href = `${WALLET_BASE}/login?force_auth=1`;
         }
 
         const formatMoney = (amount, currency) => {
@@ -360,7 +363,7 @@
                     return;
                 }
 
-                const res = await fetch(`/api/v1/checkout/${sessionId}`);
+                const res = await fetch(`${PAYMENT_API_BASE}/checkout/${sessionId}`);
                 if (!res.ok) throw new Error('Failed to load checkout session');
 
                 sessionData = await res.json();
@@ -434,7 +437,7 @@
             errorMsg.textContent = '';
 
             try {
-                const res = await fetch(`/api/v1/checkout/${sessionId}/authorize`, {
+                const res = await fetch(`${PAYMENT_API_BASE}/checkout/${sessionId}/authorize`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

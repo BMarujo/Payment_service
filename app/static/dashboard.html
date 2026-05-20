@@ -171,14 +171,17 @@
 
 <script>
     const token = localStorage.getItem('egs_access_token');
+    const PAYMENT_BASE_PATH = window.location.pathname.startsWith('/payment/') ? '/payment' : '';
+    const WALLET_BASE = `${PAYMENT_BASE_PATH}/wallet`;
+    const PAYMENT_API_BASE = `${PAYMENT_BASE_PATH}/api/v1`;
 
     if (!token) {
-        window.location.href = '/wallet/login';
+        window.location.href = `${WALLET_BASE}/login`;
     }
 
     async function loadTransactions() {
         try {
-            const resp = await fetch('/api/v1/customers/me/transactions', {
+            const resp = await fetch(`${PAYMENT_API_BASE}/customers/me/transactions`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
@@ -218,7 +221,7 @@
 
     function logout() {
         localStorage.removeItem('egs_access_token');
-        window.location.href = '/wallet/login';
+        window.location.href = `${WALLET_BASE}/login`;
     }
 
     loadTransactions();

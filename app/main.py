@@ -3,6 +3,7 @@ FastAPI application factory — the main entry point.
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, status
@@ -161,9 +162,20 @@ def create_app() -> FastAPI:
     # ── Exception Handlers ───────────────────────────
     register_exception_handlers(app)
 
+    def _strip_public_prefix(scope, prefix: str):
+        path = scope.get("path", "")
+        if path == prefix:
+            scope["path"] = "/"
+            scope["root_path"] = prefix
+        elif path.startswith(f"{prefix}/"):
+            scope["path"] = path[len(prefix):] or "/"
+            scope["root_path"] = prefix
+
     # ── Middleware: Correlation ID + Auth + Rate Limiting ─
     @app.middleware("http")
     async def middleware_stack(request: Request, call_next):
+        _strip_public_prefix(request.scope, "/payment")
+
         # 1. Correlation ID
         corr_id = request.headers.get("X-Correlation-ID", generate_correlation_id())
         correlation_id_ctx.set(corr_id)
@@ -286,6 +298,7 @@ def create_app() -> FastAPI:
 
         # 4. Add correlation ID to response
         response.headers["X-Correlation-ID"] = corr_id
+        response.headers["X-Pod-Name"] = os.getenv("POD_NAME") or os.getenv("HOSTNAME", "unknown")
 
         # 5. Add rate limit headers if authenticated
         if not skip_auth:

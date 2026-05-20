@@ -170,7 +170,9 @@
 
 <script>
     const EGS_TOKEN_KEY = 'egs_access_token';
-    const AUTH_SERVICE_BASE = `${window.location.protocol}//payment-auth.flashsale`;
+    const PAYMENT_BASE_PATH = window.location.pathname.startsWith('/payment/') ? '/payment' : '';
+    const WALLET_BASE = `${PAYMENT_BASE_PATH}/wallet`;
+    const AUTH_SERVICE_BASE = `${window.location.origin}/payment-auth`;
 
     const searchParams = new URLSearchParams(window.location.search);
     const forceAuth = searchParams.get('force_auth') === '1';
@@ -181,7 +183,7 @@
         return query ? `${path}${query}` : path;
     }
 
-    document.getElementById('register-link').href = withCurrentQuery('/wallet/register');
+    document.getElementById('register-link').href = withCurrentQuery(`${WALLET_BASE}/register`);
 
     function sanitizeReturnUrl(rawUrl) {
         try {
@@ -193,7 +195,7 @@
         }
     }
 
-    document.querySelector('.link-row a').href = withCurrentQuery('/wallet/register');
+    document.querySelector('.link-row a').href = withCurrentQuery(`${WALLET_BASE}/register`);
 
     if (forceAuth) {
         localStorage.removeItem(EGS_TOKEN_KEY);
@@ -216,7 +218,7 @@
         } else if (queryReturnUrl) {
             window.location.href = sanitizeReturnUrl(queryReturnUrl);
         } else {
-            window.location.href = '/wallet/dashboard';
+            window.location.href = `${WALLET_BASE}/dashboard`;
         }
     }
 
@@ -255,7 +257,7 @@
             } else if (queryReturnUrl) {
                 window.location.href = sanitizeReturnUrl(queryReturnUrl);
             } else {
-                window.location.href = '/wallet/dashboard';
+                window.location.href = `${WALLET_BASE}/dashboard`;
             }
 
         } catch (err) {

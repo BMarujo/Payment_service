@@ -178,7 +178,9 @@
 
 <script>
     const EGS_TOKEN_KEY = 'egs_access_token';
-    const AUTH_SERVICE_BASE = `${window.location.protocol}//payment-auth.flashsale`;
+    const PAYMENT_BASE_PATH = window.location.pathname.startsWith('/payment/') ? '/payment' : '';
+    const WALLET_BASE = `${PAYMENT_BASE_PATH}/wallet`;
+    const AUTH_SERVICE_BASE = `${window.location.origin}/payment-auth`;
     const searchParams = new URLSearchParams(window.location.search);
     const forceAuth = searchParams.get('force_auth') === '1';
 
@@ -197,7 +199,7 @@
         }
     }
 
-    document.querySelector('.link-row a').href = withCurrentQuery('/wallet/login');
+    document.querySelector('.link-row a').href = withCurrentQuery(`${WALLET_BASE}/login`);
 
     if (forceAuth) {
         localStorage.removeItem(EGS_TOKEN_KEY);
@@ -209,7 +211,7 @@
         if (queryReturnUrl) {
             window.location.href = queryReturnUrl;
         } else {
-            window.location.href = '/wallet/dashboard';
+            window.location.href = `${WALLET_BASE}/dashboard`;
         }
     }
 
@@ -247,7 +249,7 @@
             successEl.style.display = 'block';
 
             setTimeout(() => {
-                window.location.href = withCurrentQuery('/wallet/login');
+                window.location.href = withCurrentQuery(`${WALLET_BASE}/login`);
             }, 1000);
 
         } catch (err) {
